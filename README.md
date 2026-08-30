@@ -32,14 +32,14 @@ npm run family -- create james "James Family"
 ### Dev accounts & seed data
 
 ```bash
-npm run user -- create home dev@example.com devpassword --name "Dev"
-# → dev@example.com is now admin of "home", login at http://home.lvh.me:8787
-
+npm run setup           # one-shot: ensures the home family, creates a known
+                        # test login (dev@example.com / devpassword), seeds data
+npm run user -- create home bob@example.com bobpassword --name "Bob"
 npm run seed -- home            # drop 28 realistic items into the home family
 npm run seed -- home --clear    # clear the family's items first, then seed
 ```
 
-`npm run user -- create <family> <email> <password> [--name "..."] [--member]` provisions a known account for any family — useful for a repeatable test login, even on families that are already claimed. The first visitor to an empty family can also just sign up and becomes admin automatically.
+`npm run setup` is idempotent — safe to re-run any time (it resets the dev password and only seeds when the family is empty). `npm run user -- create <family> <email> <password> [--name "..."] [--member]` provisions a known account for any family, even ones already claimed. The first visitor to an empty family can also just sign up and becomes admin automatically.
 
 `npm run seed -- <family> [--clear]` fills a family with sample groceries across categories, tagged with stores (Costco / Trader Joe's / Smith's) and a few already checked off — handy for seeing the whole UI populated.
 
@@ -112,7 +112,7 @@ Runs the `node:test` suite (no deps).
 - `test/auth.test.mjs` covers the auth flow: bootstrap mode, first-user-becomes-admin, scrypt hashing, invite-gated signup, admin-only invites, login/logout, session cookies, and the 401/403 guards.
 - `test/realtime.test.mjs` covers SSE: auth guard on the stream, snapshot broadcasts to other members, and cross-family isolation (no leak between tenants).
 - `test/tags.test.mjs` covers store tagging: seeded tags, tagging items on create/update, custom tags, and snapshot shape.
-- `test/hardening.test.mjs` covers brute-force rate limiting (per-IP + per-email lockout, `429`), hashed session-token storage, and expired-session rejection.
+- `test/hardening.test.mjs` covers brute-force rate limiting (at most one failed attempt per second, per IP and per email, cleared on success), hashed session-token storage, and expired-session rejection.
 
 ## Notes
 

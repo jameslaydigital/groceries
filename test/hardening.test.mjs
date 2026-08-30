@@ -9,7 +9,7 @@ const DATA_DIR = mkdtempSync(join(tmpdir(), 'groceries-hardening-test-'))
 process.env.DATA_DIR = DATA_DIR
 process.env.PLATFORM_DB = join(DATA_DIR, 'platform.db')
 process.env.SKIP_LEGACY_ADOPTION = '1'
-process.env.AUTH_RATE_MAX = '5'
+process.env.AUTH_RATE_MS = '1000'
 
 const { createApp, platform, hashPassword } = await import('../server.js')
 
@@ -63,39 +63,43 @@ function addMember(email) {
 }
 
 describe('brute-force protection', () => {
-  it('locks out an IP after too many failed logins', async () => {
+  it('allows one failed attempt per second', async () => {
     addMember('alice@example.com')
-    const statuses = []
-    for (let i = 0; i < 6; i++) {
-      const res = await rpc('home.lvh.me', 'auth.login', [{ email: 'alice@example.com', password: 'wrong' }], { ip: '10.0.0.1' })
-      statuses.push(res.status)
-    }
-    assert.deepEqual(statuses, [401, 401, 401, 401, 401, 429])
-    assert.equal((await rpc('home.lvh.me', 'auth.login', [{ email: 'alice@example.com', password: 'wrong' }], { ip: '10.0.0.1' })).status, 429)
+    const first = await rpc('home.lvh.me', 'auth.login', [{ email: 'alice@example.com', password: 'wrong' }], { ip: '10.0.0.1' })
+    assert.equal(first.status, 401)
+    // an immediate retry is throttled
+    const second = await rpc('home.lvh.me', 'auth.login', [{ email: 'alice@example.com', password: 'wrong' }], { ip: '10.0.0.1' })
+    assert.equal(second.status, 429)
+    // after a second passes, a new attempt is allowed
+    await new Promise((r) => setTimeout(r, 1100))
+    const third = await rpc('home.lvh.me', 'auth.login', [{ email: 'alice@example.com', password: 'wrong' }], { ip: '10.0.0.1' })
+    assert.equal(third.status, 401)
   })
 
-  it('locks the account even from a different IP', async () => {
-    // alice's email bucket is at 5 from the previous test, so a correct
-    // password from a clean IP is still rejected until the window resets.
-    const res = await rpc('home.lvh.me', 'auth.login', [{ email: 'alice@example.com', password: 'hunter2secret' }], { ip: '10.0.0.2' })
-    assert.equal(res.status, 429)
+  it('a successful login clears the throttle', async () => {
+    // wait for alice's email throttle to expire from the previous test
+    await new Promise((r) => setTimeout(r, 1100))
+    const ok = await rpc('home.lvh.me', 'auth.login', [{ email: 'alice@example.com', password: 'hunter2secret' }], { ip: '10.0.0.2' })
+    assert.equal(ok.status, 200)
+    // success clears the throttle: an immediate correct login also works
+    const again = await rpc('home.lvh.me', 'auth.login', [{ email: 'alice@example.com', password: 'hunter2secret' }], { ip: '10.0.0.2' })
+    assert.equal(again.status, 200)
   })
 
-  it('a clean account on a clean IP still works', async () => {
-    addMember('bob@example.com')
-    const res = await rpc('home.lvh.me', 'auth.login', [{ email: 'bob@example.com', password: 'hunter2secret' }], { ip: '10.0.0.3' })
-    assert.equal(res.status, 200)
-  })
-
-  it('an IP locked by one account stays locked for others', async () => {
-    const res = await rpc('home.lvh.me', 'auth.login', [{ email: 'bob@example.com', password: 'hunter2secret' }], { ip: '10.0.0.1' })
-    assert.equal(res.status, 429)
+  it('the throttle is per-email across IPs', async () => {
+    addMember('carol@example.com')
+    const a = await rpc('home.lvh.me', 'auth.login', [{ email: 'carol@example.com', password: 'wrong' }], { ip: '10.0.0.3' })
+    assert.equal(a.status, 401)
+    // same email from a different IP is still throttled within the same second
+    const b = await rpc('home.lvh.me', 'auth.login', [{ email: 'carol@example.com', password: 'hunter2secret' }], { ip: '10.0.0.4' })
+    assert.equal(b.status, 429)
   })
 })
 
 describe('session storage', () => {
   it('stores only a sha256 hash of the session token', async () => {
-    const res = await rpc('home.lvh.me', 'auth.login', [{ email: 'bob@example.com', password: 'hunter2secret' }], { ip: '10.0.0.4' })
+    addMember('dave@example.com')
+    const res = await rpc('home.lvh.me', 'auth.login', [{ email: 'dave@example.com', password: 'hunter2secret' }], { ip: '10.0.0.4' })
     const raw = cookieFrom(res.setCookie).replace('groceries.session=', '')
     const row = platform.prepare('SELECT token FROM sessions ORDER BY rowid DESC LIMIT 1').get()
     assert.notEqual(row.token, raw)
@@ -105,7 +109,7 @@ describe('session storage', () => {
   })
 
   it('rejects expired sessions', async () => {
-    const res = await rpc('home.lvh.me', 'auth.login', [{ email: 'bob@example.com', password: 'hunter2secret' }], { ip: '10.0.0.5' })
+    const res = await rpc('home.lvh.me', 'auth.login', [{ email: 'dave@example.com', password: 'hunter2secret' }], { ip: '10.0.0.5' })
     const cookie = cookieFrom(res.setCookie)
     platform
       .prepare("UPDATE sessions SET expires_at = datetime('now', '-1 day') WHERE rowid = (SELECT MAX(rowid) FROM sessions)")

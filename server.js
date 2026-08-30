@@ -241,30 +241,25 @@ const SESSION_COOKIE = 'groceries.session'
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
 const PASSWORD_MIN = 8
 
-/* Brute-force protection: sliding-window counters per IP and per email. */
-const RATE_WINDOW_MS = 15 * 60 * 1000
-const RATE_MAX = Number(process.env.AUTH_RATE_MAX) || 5
-const rateBuckets = new Map() // key -> { count, resetAt }
+/* Brute-force protection: at most one failed attempt per second per key,
+   tracked separately by IP and by email. Success clears the throttle, so
+   getting the password right never leaves you locked out. */
+const RATE_INTERVAL_MS = Number(process.env.AUTH_RATE_MS) || 1000
+const lastFailure = new Map() // key -> timestamp of last failed attempt
 
-function bumpLimit(key) {
-  const now = Date.now()
-  let b = rateBuckets.get(key)
-  if (!b || b.resetAt < now) {
-    b = { count: 0, resetAt: now + RATE_WINDOW_MS }
-    rateBuckets.set(key, b)
-  }
-  b.count++
-}
-
-function assertNotLimited(key) {
-  const b = rateBuckets.get(key)
-  if (b && b.resetAt >= Date.now() && b.count >= RATE_MAX) {
-    throw Object.assign(new Error('Too many attempts — try again in a few minutes.'), { code: 'RATE_LIMITED' })
+function assertNotThrottled(key) {
+  const t = lastFailure.get(key)
+  if (t && Date.now() - t < RATE_INTERVAL_MS) {
+    throw Object.assign(new Error('Too many attempts — try again in a second.'), { code: 'RATE_LIMITED' })
   }
 }
 
-function clearLimit(key) {
-  rateBuckets.delete(key)
+function markFailure(key) {
+  lastFailure.set(key, Date.now())
+}
+
+function clearThrottle(key) {
+  lastFailure.delete(key)
 }
 
 function hashPassword(password) {
@@ -574,6 +569,9 @@ const methods = {
       throw Object.assign(new Error('Display name is too long'), { code: 'INVALID_ARGS' })
     }
 
+    assertNotThrottled(ipKey)
+    assertNotThrottled(emailKey)
+
     const existingUser = platform.prepare('SELECT * FROM users WHERE email = ?').get(normalized)
     const alreadyMember =
       existingUser &&
@@ -582,12 +580,12 @@ const methods = {
     // Existing member "signing up" on a family they belong to is a login.
     if (alreadyMember) {
       if (!verifyPassword(password, existingUser.password_hash)) {
-        bumpLimit(ipKey)
-        bumpLimit(emailKey)
+        markFailure(ipKey)
+        markFailure(emailKey)
         throw Object.assign(new Error('Incorrect password'), { code: 'AUTH_FAILED' })
       }
-      clearLimit(ipKey)
-      clearLimit(emailKey)
+      clearThrottle(ipKey)
+      clearThrottle(emailKey)
       issueSession(existingUser.id, ctx)
       return authResult(existingUser, ctx.family.subdomain)
     }
@@ -602,7 +600,7 @@ const methods = {
         .prepare('SELECT id FROM invites WHERE family_id = ? AND LOWER(email) = ?')
         .get(ctx.family.id, normalized)
       if (!invite) {
-        bumpLimit(ipKey)
+        markFailure(ipKey)
         throw Object.assign(
           new Error('This family is private — ask an admin to invite you.'),
           { code: 'FORBIDDEN' }
@@ -618,8 +616,8 @@ const methods = {
         .run(normalized, hashPassword(password), name?.trim() || null)
       user = { id: info.lastInsertRowid, email: normalized, display_name: name?.trim() || null }
     } else if (!verifyPassword(password, user.password_hash)) {
-      bumpLimit(ipKey)
-      bumpLimit(emailKey)
+      markFailure(ipKey)
+      markFailure(emailKey)
       throw Object.assign(new Error('Incorrect password'), { code: 'AUTH_FAILED' })
     }
 
@@ -627,8 +625,8 @@ const methods = {
       .prepare('INSERT INTO memberships (user_id, family_id, role) VALUES (?, ?, ?)')
       .run(user.id, ctx.family.id, role)
 
-    clearLimit(ipKey)
-    clearLimit(emailKey)
+    clearThrottle(ipKey)
+    clearThrottle(emailKey)
     issueSession(user.id, ctx)
     return authResult(user, ctx.family.subdomain)
   },
@@ -637,13 +635,13 @@ const methods = {
     const normalized = normalizeEmail(email)
     const ipKey = 'ip:' + ctx.ip
     const emailKey = 'email:' + normalized
-    assertNotLimited(ipKey)
-    assertNotLimited(emailKey)
+    assertNotThrottled(ipKey)
+    assertNotThrottled(emailKey)
 
     const user = platform.prepare('SELECT * FROM users WHERE email = ?').get(normalized)
     if (!user || !verifyPassword(password, user.password_hash)) {
-      bumpLimit(ipKey)
-      bumpLimit(emailKey)
+      markFailure(ipKey)
+      markFailure(emailKey)
       throw Object.assign(new Error('Incorrect email or password'), { code: 'AUTH_FAILED' })
     }
     const membership = platform
@@ -652,8 +650,8 @@ const methods = {
     if (!membership) {
       throw Object.assign(new Error("You're not a member of this family"), { code: 'FORBIDDEN' })
     }
-    clearLimit(ipKey)
-    clearLimit(emailKey)
+    clearThrottle(ipKey)
+    clearThrottle(emailKey)
     issueSession(user.id, ctx)
     return authResult(user, ctx.family.subdomain)
   },

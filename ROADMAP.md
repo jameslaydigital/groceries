@@ -66,7 +66,7 @@ Shop by store — Costco / Trader Joe's / Smith's.
 
 ## Phase 4 — Production hardening (mostly done)
 
-- ✅ **Brute-force protection** — sliding-window rate limiting on login/signup (per IP and per email, `AUTH_RATE_MAX` attempts per 15 min, cleared on success, `429` when throttled).
+- ✅ **Brute-force protection** — at most one failed login/signup attempt per second (per IP and per email, `AUTH_RATE_MS`), cleared on success so a correct password is never met with a lockout.
 - ✅ **Backups** — `npm run backup` snapshots `platform.db` + every tenant DB via `VACUUM INTO` into timestamped `backups/` dirs.
 - ✅ **Session hardening** — only a sha256 hash of the session token is stored; sessions expire after 30 days and are rejected when expired.
 - ✅ **Cookie flags** — `HttpOnly`, `SameSite=Lax`; `Secure` when `COOKIE_SECURE=1`.

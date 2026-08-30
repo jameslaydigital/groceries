@@ -13,6 +13,7 @@
     "family": "node scripts/create-family.mjs",
     "user": "node scripts/create-user.mjs",
     "seed": "node scripts/seed.mjs",
+    "setup": "node scripts/setup.mjs",
     "backup": "node scripts/backup.mjs",
     "test": "node --test --test-force-exit"
   },

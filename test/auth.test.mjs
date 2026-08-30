@@ -10,6 +10,7 @@ const DATA_DIR = mkdtempSync(join(tmpdir(), 'groceries-auth-test-'))
 process.env.DATA_DIR = DATA_DIR
 process.env.PLATFORM_DB = join(DATA_DIR, 'platform.db')
 process.env.SKIP_LEGACY_ADOPTION = '1'
+process.env.AUTH_RATE_MS = '1'
 
 const { createApp, platform, hashPassword } = await import('../server.js')
 
