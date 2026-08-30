@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "start": "node server.js",
     "icons": "node scripts/gen-icons.mjs",
-    "family": "node scripts/create-family.mjs"
+    "family": "node scripts/create-family.mjs",
+    "test": "node --test --test-force-exit"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.0",

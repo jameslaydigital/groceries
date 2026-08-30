@@ -7,7 +7,8 @@ import { DatabaseSync } from 'node:sqlite'
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url))
 const DIST = join(ROOT, 'dist')
-const DATA_DIR = join(ROOT, 'families')
+const DATA_DIR = process.env.DATA_DIR || join(ROOT, 'families')
+const PLATFORM_DB = process.env.PLATFORM_DB || join(ROOT, 'platform.db')
 const PORT = process.env.PORT || 8787
 const DEFAULT_SUBDOMAIN = process.env.DEFAULT_SUBDOMAIN || 'home'
 
@@ -62,12 +63,13 @@ function migratePlatform(db) {
   }
 }
 
-const platform = new DatabaseSync(join(ROOT, 'platform.db'))
+const platform = new DatabaseSync(PLATFORM_DB)
 migratePlatform(platform)
 
 /* Adopt a legacy single-tenant groceries.db into the default family if
    that family has no database yet — keeps existing lists around. */
 function adoptLegacyDb() {
+  if (process.env.SKIP_LEGACY_ADOPTION) return
   const legacy = join(ROOT, 'groceries.db')
   const target = join(DATA_DIR, `${DEFAULT_SUBDOMAIN}.db`)
   if (existsSync(legacy) && !existsSync(target)) {
@@ -152,7 +154,14 @@ function migrateTenant(db) {
 
 const tenantCache = new Map()
 
+// Subdomains become directory-relative filenames, so we only ever accept a
+// conservative whitelist. Rejects `..`, `/`, dots, uppercase, etc.
+const SUBDOMAIN_RE = /^[a-z0-9][a-z0-9-]{0,62}$/
+
 function getTenantDb(subdomain) {
+  if (!SUBDOMAIN_RE.test(subdomain)) {
+    throw new TenantError(`Invalid tenant key "${subdomain}"`, 'NO_FAMILY')
+  }
   let db = tenantCache.get(subdomain)
   if (!db) {
     db = new DatabaseSync(join(DATA_DIR, `${subdomain}.db`))
@@ -167,17 +176,20 @@ function getTenantDb(subdomain) {
 /* ------------------------------------------------------------------ */
 
 function tenantKeyFromHost(host) {
-  let h = String(host || '').split(':')[0].toLowerCase()
+  let h = String(host ?? '').trim().toLowerCase()
   if (!h) return null
+  // bracketed IPv6 literal → treat as the default tenant
+  if (/^\[[^\]]+\](?::\d+)?$/.test(h)) return DEFAULT_SUBDOMAIN
+  h = h.split(':')[0]
   if (h === 'localhost' || h === '127.0.0.1' || h === '::1') return DEFAULT_SUBDOMAIN
   for (const bare of ['lvh.me']) {
     if (h === bare) return DEFAULT_SUBDOMAIN
     if (h.endsWith('.' + bare)) {
-      const key = h.slice(0, -(bare.length + 1))
-      return key || DEFAULT_SUBDOMAIN
+      const key = h.slice(0, -(bare.length + 1)).replace(/[^a-z0-9-]/g, '-')
+      if (key) return key
     }
   }
-  return h.replace(/[^a-z0-9-]/g, '-')
+  return h.replace(/[^a-z0-9-]/g, '-') || null
 }
 
 class TenantError extends Error {
@@ -411,27 +423,43 @@ function send(res, status, payload) {
   res.end(JSON.stringify(payload))
 }
 
-const server = createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`)
-  const pathname = url.pathname
+export function createApp() {
+  return createServer(async (req, res) => {
+    try {
+      // Never build a URL from the (attacker-controlled) Host header — a
+      // malformed host would throw here and leave the request hanging.
+      const pathname = new URL(req.url, 'http://internal.local').pathname
 
-  if (req.method === 'OPTIONS') {
-    res.writeHead(204, {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, GET',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    })
-    return res.end()
-  }
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'POST, GET',
+          'Access-Control-Allow-Headers': 'Content-Type',
+        })
+        return res.end()
+      }
 
-  if (pathname === '/rpc' || pathname === '/rpc/') {
-    return handleRpc(req, res)
-  }
+      if (pathname === '/rpc' || pathname === '/rpc/') {
+        return await handleRpc(req, res)
+      }
 
-  return serveStatic(req, res, pathname)
-})
+      return await serveStatic(req, res, pathname)
+    } catch (err) {
+      // Never leave a client hanging on malformed input.
+      if (!res.headersSent) {
+        send(res, 500, { ok: false, error: { code: 'INTERNAL', message: 'Internal error' } })
+      } else {
+        res.end()
+      }
+    }
+  })
+}
 
-server.listen(PORT, () => {
-  console.log(`🍎 groceries server running → http://localhost:${PORT}`)
-  console.log(`   families: {subdomain}.lvh.me:${PORT}  (default: ${DEFAULT_SUBDOMAIN})`)
-})
+export { tenantKeyFromHost, buildCtx, getTenantDb, DEFAULT_SUBDOMAIN, DATA_DIR, TenantError }
+
+if (import.meta.main) {
+  createApp().listen(PORT, () => {
+    console.log(`🍎 groceries server running → http://localhost:${PORT}`)
+    console.log(`   families: {subdomain}.lvh.me:${PORT}  (default: ${DEFAULT_SUBDOMAIN})`)
+  })
+}

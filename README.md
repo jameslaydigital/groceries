@@ -72,6 +72,14 @@ src/components/            ItemRow (swipe-to-delete), AddSheet (bottom sheet), P
 public/manifest.webmanifest, public/sw.js, scripts/gen-icons.mjs
 ```
 
+## Tests
+
+```bash
+npm test
+```
+
+Runs the `node:test` suite (no deps). `test/tenant.test.mjs` locks down the tenant-selection security boundary: Host-header parsing (case, ports, IPv6, trailing dots, crafted aliases), unknown/empty/missing hosts, tenant data isolation, and hostile Host headers that must never create files outside `families/` or leave a request hanging.
+
 ## Notes
 
 - Defaults to port **8787** (`PORT=...` to override) because 3000 was taken on this machine; update `vite.config.js` if you change it.
