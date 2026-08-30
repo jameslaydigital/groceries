@@ -11,6 +11,9 @@ const DIST = join(ROOT, 'dist')
 const DATA_DIR = process.env.DATA_DIR || join(ROOT, 'families')
 const PLATFORM_DB = process.env.PLATFORM_DB || join(ROOT, 'platform.db')
 const PORT = process.env.PORT || 8787
+// Bind loopback by default — only Caddy/reverse proxy should reach the app.
+// Set BIND_HOST=0.0.0.0 in container setups where a peer service connects to it.
+const BIND_HOST = process.env.BIND_HOST || '127.0.0.1'
 const DEFAULT_SUBDOMAIN = process.env.DEFAULT_SUBDOMAIN || 'home'
 // Production base domain, e.g. "example.com" → home.example.com, james.example.com
 const BASE_DOMAIN = String(process.env.BASE_DOMAIN ?? '').trim().toLowerCase()
@@ -971,8 +974,8 @@ export {
 }
 
 if (import.meta.main) {
-  createApp().listen(PORT, () => {
-    console.log(`🛒 syncart server running → http://localhost:${PORT}`)
+  createApp().listen(PORT, BIND_HOST, () => {
+    console.log(`🛒 syncart server running → http://${BIND_HOST}:${PORT}`)
     console.log(`   families: {subdomain}.lvh.me:${PORT}  (default: ${DEFAULT_SUBDOMAIN})`)
   })
 }
