@@ -1,0 +1,124 @@
+:root {
+  /* palette — fresh market */
+  --bg: #f6f4ee;
+  --card: rgba(255, 255, 255, 0.86);
+  --card-border: rgba(31, 41, 36, 0.08);
+  --card-shadow: 0 2px 6px rgba(30, 50, 40, 0.06), 0 10px 28px rgba(30, 50, 40, 0.07);
+  --ink: #1c2a22;
+  --ink-soft: #2e4336;
+  --muted: #6b7c70;
+  --accent: #0f9d5c;
+  --accent-strong: #0c8150;
+  --accent-gradient: linear-gradient(135deg, #23b26b, #0e9d5c);
+  --accent-tint: rgba(15, 157, 92, 0.12);
+  --accent-glow: rgba(15, 157, 92, 0.32);
+  --accent-soft: #1f9d61;
+  --focus-ring: rgba(15, 157, 92, 0.16);
+  --ring-track: rgba(20, 40, 30, 0.1);
+  --ring-fg: var(--accent-strong);
+  --check-bg: rgba(15, 157, 92, 0.08);
+  --check-border: rgba(28, 42, 34, 0.18);
+  --scrim: rgba(20, 30, 24, 0.42);
+  --sheet: #fffdf8;
+  --grabber: rgba(28, 42, 34, 0.14);
+  --input-bg: #f2f1ea;
+  --input-border: rgba(28, 42, 34, 0.1);
+  --chip-bg: rgba(28, 42, 34, 0.06);
+  --danger: #e11d48;
+  --danger-tint: rgba(225, 29, 72, 0.1);
+  --warn-bg: rgba(217, 119, 6, 0.13);
+  --warn-fg: #b45309;
+  --toast-bg: rgba(28, 42, 34, 0.92);
+  --toast-fg: #f5fbf7;
+  --skeleton-shine: rgba(255, 255, 255, 0.7);
+  --marker: #fde68a;
+
+  --font: ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', 'Inter', Arial, sans-serif;
+
+  font-family: var(--font);
+  color: var(--ink);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1713;
+    --card: rgba(28, 41, 34, 0.72);
+    --card-border: rgba(255, 255, 255, 0.07);
+    --card-shadow: 0 2px 6px rgba(0, 0, 0, 0.25), 0 12px 30px rgba(0, 0, 0, 0.3);
+    --ink: #eef6f0;
+    --ink-soft: #cfe0d5;
+    --muted: #8fa599;
+    --accent: #34d399;
+    --accent-strong: #34d399;
+    --accent-tint: rgba(52, 211, 153, 0.14);
+    --accent-glow: rgba(52, 211, 153, 0.3);
+    --accent-soft: #4ade80;
+    --focus-ring: rgba(52, 211, 153, 0.2);
+    --ring-track: rgba(255, 255, 255, 0.1);
+    --check-bg: rgba(255, 255, 255, 0.06);
+    --check-border: rgba(238, 246, 240, 0.22);
+    --scrim: rgba(0, 0, 0, 0.55);
+    --sheet: #15211a;
+    --grabber: rgba(255, 255, 255, 0.14);
+    --input-bg: rgba(255, 255, 255, 0.05);
+    --input-border: rgba(255, 255, 255, 0.1);
+    --chip-bg: rgba(255, 255, 255, 0.07);
+    --danger: #fb7185;
+    --danger-tint: rgba(251, 113, 133, 0.14);
+    --warn-bg: rgba(251, 191, 36, 0.14);
+    --warn-fg: #fbbf24;
+    --toast-bg: rgba(238, 246, 240, 0.94);
+    --toast-fg: #10231a;
+    --skeleton-shine: rgba(255, 255, 255, 0.06);
+    --marker: #a16207;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  min-height: 100svh;
+  overscroll-behavior-y: none;
+  transition: background 0.4s ease;
+}
+
+#app {
+  min-height: 100svh;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+::selection {
+  background: var(--marker);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--chip-bg);
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
