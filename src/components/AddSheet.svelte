@@ -11,7 +11,6 @@
   let suggestions = $state([])
   let busy = $state(false)
   let input = $state(null)
-  let chips
 
   let categories = $derived(data.categories)
   let tags = $derived(data.tags)
@@ -116,7 +115,7 @@
       <div class="head">
         <h2>{editingId ? 'Edit item' : 'Add to list'}</h2>
         {#if editingId}
-          <span class="cancel" onclick={close}>Done</span>
+          <button class="cancel" type="button" onclick={close}>Done</button>
         {/if}
       </div>
 
@@ -148,7 +147,7 @@
 
       <div class="field">
         <span class="label">Category</span>
-        <div class="cat-grid" bind:this={chips}>
+        <div class="cat-grid">
           {#each categories as c (c.name)}
             <button class:active={category === c.name} onclick={() => (category = c.name)}>
               <span class="cat-icon">{c.icon}</span>
@@ -227,6 +226,9 @@
     color: var(--ink);
   }
   .cancel {
+    border: 0;
+    background: transparent;
+    font-family: inherit;
     color: var(--accent);
     font-weight: 700;
     font-size: 15px;

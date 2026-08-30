@@ -6,11 +6,16 @@ A visually stunning, mobile-first grocery list PWA. Built with **Svelte 5 + Vite
 
 ```bash
 npm install
-npm run dev          # Vite dev server on :5173, proxies /rpc to the backend
-npm run build        # production build into dist/
-npm start            # serves dist/ + the RPC API on :8787
-npm run backup       # snapshot platform.db + every family DB into backups/
+npm run dev:all     # backend on :8787 + Vite dev server on :5173 (hot reload)
+npm run dev         # Vite only on :5173 (expects a backend already on :8787)
+npm run build       # production build into dist/
+npm start           # serves dist/ + the RPC API on :8787
+npm run backup      # snapshot platform.db + every family DB into backups/
 ```
+
+Two ports to know:
+- **:5173** — the Vite dev server you browse during development (`http://localhost:5173`). It proxies `/rpc` and `/events` to the backend, so the backend must also be running (`dev:all` starts both).
+- **:8787** — the production-style server (`npm start`): serves the built app **and** the API. Both share the same test login; cookies and the realtime SSE stream work through either.
 
 The server is multi-tenant. Each **family** gets its own SQLite file (`families/<subdomain>.db`) and you pick which family you're looking at by subdomain:
 

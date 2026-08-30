@@ -41,17 +41,18 @@
   }
 </script>
 
-<div
-  class="swipe-wrap"
-  style="--off: {offset}px"
-  ontouchstart={onStart}
-  ontouchmove={onMove}
-  ontouchend={onEnd}
-  onmousedown={onStart}
-  onmousemove={onMove}
-  onmouseup={onEnd}
-  onmouseleave={onEnd}
->
+  <div
+    class="swipe-wrap"
+    role="presentation"
+    style="--off: {offset}px"
+    ontouchstart={onStart}
+    ontouchmove={onMove}
+    ontouchend={onEnd}
+    onmousedown={onStart}
+    onmousemove={onMove}
+    onmouseup={onEnd}
+    onmouseleave={onEnd}
+  >
   <div class="row-bg">
     <button class="del" onclick={onDelete} aria-label="Delete {item.name}">✕</button>
     <button class="edit-btn" onclick={onEdit} aria-label="Edit {item.name}">✎</button>
@@ -64,7 +65,7 @@
       </svg>
     </button>
 
-    <div class="body" onclick={onEdit}>
+    <button type="button" class="body" onclick={onEdit}>
       <span class="icon">{item.category_icon ?? '🛒'}</span>
       <div class="texts">
         <span class="name">{item.name}</span>
@@ -77,7 +78,7 @@
           {/each}
         </span>
       {/if}
-    </div>
+    </button>
   </div>
 </div>
 
@@ -175,6 +176,12 @@
     min-width: 0;
     flex: 1;
     cursor: pointer;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    text-align: left;
+    font: inherit;
+    color: inherit;
   }
   .icon {
     font-size: 24px;
