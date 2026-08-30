@@ -2,6 +2,8 @@
 
 A visually stunning, mobile-first grocery list PWA for families. Built with **Svelte 5 + Vite** on the front and **Node + SQLite (`node:sqlite`)** on the back, communicating over a thin JSON-RPC layer. Changes sync instantly between devices over SSE.
 
+> Context: agents/contributors should read **`AGENTS.md`** (architecture, invariants, gotchas) before editing. Live-host and deployment details are in **`deploy/README.md`**. Product history is in **`ROADMAP.md`**.
+
 ## Run it
 
 ```bash

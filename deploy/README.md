@@ -131,3 +131,35 @@ retaining the newest `KEEP_BACKUPS`. Manually: `npm run backup`.
   replicas without adding pub/sub.
 - After enabling TLS, force clients to HTTPS by removing the `:80` plain site
   from Caddy.
+
+---
+
+## Current live box (as of Aug 2026)
+
+| | |
+|---|---|
+| Host | **Linode `g6-nanode-1gb`** (1 vCPU / 1GB / 25GB), Ubuntu 26.04, hostname `syncart` |
+| Public IP | **23.239.29.165** |
+| Access | `ssh syncart` (laptop `~/.ssh/config` → user `deploy`, key `~/.ssh/id_syncart_deploy`) |
+| App | `/opt/syncart`, built, `systemd` unit `syncart.service`, binds `127.0.0.1:8787` |
+| Proxy | Caddy 2.6.2 (apt), reverse-proxies `:80` → `127.0.0.1:8787`. Interim Caddyfile is a plain `:80` proxy (no TLS yet). |
+| Data dir | `/opt/syncart/families` + `/opt/syncart/platform.db` (no env override; defaults) |
+| Known login | `dev@example.com` / `devpassword` (admin of `home`), from `npm run setup` |
+
+**Security posture (applied):** root SSH disabled (`PermitRootLogin no`),
+password auth off (key-only), root password locked, fail2ban active (sshd
+jail), UFW allows only 22/80/443, app bound to loopback, unattended-upgrades
+on, systemd hardening on the service (`NoNewPrivileges`, `ProtectSystem=full`,
+etc.). The `deploy` user keeps **blanket passwordless sudo** by choice — the SSH
+private key is treated as the trust boundary.
+
+**Interim access without a domain:** `DEFAULT_HOSTS=23.239.29.165` maps the raw
+IP to the `home` family, so `http://23.239.29.165` works today (HTTP, no
+Secure cookies).
+
+**Not done yet — the domain/TLS step:**
+1. Register a domain; point `yourdomain.com` + `*.yourdomain.com` A records → 23.239.29.165.
+2. Create a Linode API token (DNS scope) for Caddy's wildcard cert.
+3. Build a Caddy with `github.com/caddy-dns/linode` (`xcaddy build --with ...`) and replace `/usr/bin/caddy`.
+4. Set `BASE_DOMAIN`, `COOKIE_DOMAIN=.yourdomain.com`, `COOKIE_SECURE=1` in `syncart.service`; swap the Caddyfile for the TLS version (`deploy/Caddyfile`).
+
