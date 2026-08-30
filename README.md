@@ -24,6 +24,20 @@ npm run family -- create james "James Family"
 
 `lvh.me` resolves every subdomain to `127.0.0.1`, so this works locally with zero DNS setup. Global data (users, families, sessions) lives in `platform.db`; per-family data lives in `families/*.db`. If a legacy single-tenant `groceries.db` exists on first run, it's adopted as the `home` family's database.
 
+### Dev accounts & seed data
+
+```bash
+npm run user -- create home dev@example.com devpassword --name "Dev"
+# → dev@example.com is now admin of "home", login at http://home.lvh.me:8787
+
+npm run seed -- home            # drop 28 realistic items into the home family
+npm run seed -- home --clear    # clear the family's items first, then seed
+```
+
+`npm run user -- create <family> <email> <password> [--name "..."] [--member]` provisions a known account for any family — useful for a repeatable test login, even on families that are already claimed. The first visitor to an empty family can also just sign up and becomes admin automatically.
+
+`npm run seed -- <family> [--clear]` fills a family with sample groceries across categories, tagged with stores (Costco / Trader Joe's / Smith's) and a few already checked off — handy for seeing the whole UI populated.
+
 ## The RPC layer
 
 The front and back end talk only through an RPC endpoint — `POST /rpc` with `{ "method": "...", "params": [...] }`, returning `{ ok: true, result }` or `{ ok: false, error }`.
