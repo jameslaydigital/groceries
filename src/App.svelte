@@ -3,7 +3,8 @@
   import ProgressRing from './components/ProgressRing.svelte'
   import ItemRow from './components/ItemRow.svelte'
   import AddSheet from './components/AddSheet.svelte'
-  import { data, ui, load, clearChecked, toast, family } from './lib/store.svelte.js'
+  import AuthScreen from './components/AuthScreen.svelte'
+  import { data, ui, load, clearChecked, toast, family, user, auth, logout } from './lib/store.svelte.js'
   import rpc from './lib/rpc.js'
 
   let showSheet = $state(false)
@@ -90,11 +91,29 @@
 
   function openAdd() {
     ui.editing = null
+    ui.toast = null
     showSheet = true
+  }
+
+  function goToFamily(subdomain) {
+    if (subdomain === family.subdomain) return
+    const host = window.location.hostname
+    const port = window.location.port ? `:${window.location.port}` : ''
+    let newHost
+    if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.lvh.me')) {
+      newHost = `${subdomain}.lvh.me`
+    } else {
+      const labels = host.split('.')
+      newHost = labels.length > 2 ? `${subdomain}.${labels.slice(1).join('.')}` : `${subdomain}.${host}`
+    }
+    window.location.href = `${window.location.protocol}//${newHost}${port}${window.location.pathname}`
   }
 </script>
 
-<main class="app">
+{#if auth.status === 'anon'}
+  <AuthScreen />
+{:else}
+  <main class="app">
   <div class="blobs" aria-hidden="true">
     <span class="blob b1"></span>
     <span class="blob b2"></span>
@@ -121,7 +140,23 @@
       </div>
       <div class="header-right">
         {#if family.name}
-          <span class="family-pill" title={family.subdomain}>{family.name}</span>
+          {#if user.families.length > 1}
+            <select class="switcher" value={family.subdomain} onchange={(e) => goToFamily(e.target.value)} aria-label="Switch family">
+              {#each user.families as f (f.subdomain)}
+                <option value={f.subdomain}>{f.name}</option>
+              {/each}
+            </select>
+          {:else}
+            <span class="family-pill" title={family.subdomain}>{family.name}</span>
+          {/if}
+        {/if}
+        {#if user.id}
+          <button class="logout" onclick={logout} aria-label="Log out" title="Log out">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <path d="M16 17l5-5-5-5M21 12H9" />
+            </svg>
+          </button>
         {/if}
         {#if installPrompt && !installed}
           <button class="install" onclick={install} aria-label="Install app">⤓ Install</button>
@@ -227,7 +262,8 @@
       </div>
     {/if}
   </div>
-</main>
+  </main>
+{/if}
 
 <style>
   .app {
@@ -350,6 +386,42 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .switcher {
+    border: 1.5px solid var(--card-border);
+    background: var(--card);
+    color: var(--ink);
+    border-radius: 999px;
+    padding: 6px 28px 6px 12px;
+    font-size: 12.5px;
+    font-weight: 800;
+    font-family: inherit;
+    cursor: pointer;
+    max-width: 120px;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+      linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+    background-position: calc(100% - 14px) 55%, calc(100% - 10px) 55%;
+    background-size: 4px 4px;
+    background-repeat: no-repeat;
+  }
+  .logout {
+    border: 0;
+    background: var(--chip-bg);
+    color: var(--muted);
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    transition: transform 0.15s, background 0.15s;
+  }
+  .logout:active {
+    transform: scale(0.9);
+    background: var(--danger-tint);
+    color: var(--danger);
   }
 
   .search-wrap {

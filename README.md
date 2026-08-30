@@ -42,7 +42,11 @@ await rpc('setChecked', id, true)
 
 | Method          | Params                                 | Returns                              |
 | --------------- | -------------------------------------- | ------------------------------------ |
-| `meta`          | —                                      | `{ family, user, families }`         |
+| `meta`          | —                                      | `{ family, user, role, families }`   |
+| `auth.signup`   | `{ email, password, name? }`           | auth result + session cookie         |
+| `auth.login`    | `{ email, password }`                  | auth result + session cookie         |
+| `auth.logout`   | —                                      | clears the session cookie            |
+| `auth.invite`   | `{ email }`                            | admin-only, invites a member         |
 | `ping`          | —                                      | `{ pong }`                           |
 | `snapshot`      | —                                      | `{ categories, items }`              |
 | `listCategories`| —                                      | categories with item counts          |
@@ -78,7 +82,9 @@ public/manifest.webmanifest, public/sw.js, scripts/gen-icons.mjs
 npm test
 ```
 
-Runs the `node:test` suite (no deps). `test/tenant.test.mjs` locks down the tenant-selection security boundary: Host-header parsing (case, ports, IPv6, trailing dots, crafted aliases), unknown/empty/missing hosts, tenant data isolation, and hostile Host headers that must never create files outside `families/` or leave a request hanging.
+Runs the `node:test` suite (no deps).
+- `test/tenant.test.mjs` locks down the tenant-selection security boundary: Host-header parsing (case, ports, IPv6, trailing dots, crafted aliases), unknown/empty/missing hosts, tenant data isolation, and hostile Host headers that must never create files outside `families/` or leave a request hanging.
+- `test/auth.test.mjs` covers the auth flow: bootstrap mode, first-user-becomes-admin, scrypt hashing, invite-gated signup, admin-only invites, login/logout, session cookies, and the 401/403 guards.
 
 ## Notes
 

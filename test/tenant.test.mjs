@@ -270,17 +270,18 @@ describe('hostile Host headers', () => {
 
 describe('buildCtx', () => {
   it('returns a per-family db and family, with no auth yet', () => {
-    const ctx = buildCtx('james.lvh.me')
+    const ctx = buildCtx({ headers: { host: 'james.lvh.me' } })
     assert.equal(ctx.family.subdomain, 'james')
     assert.equal(ctx.user, null)
     assert.deepEqual(ctx.families, [])
+    assert.equal(ctx.bootstrap, true)
     // ctx.db really is the tenant db
     const items = ctx.db.prepare('SELECT COUNT(*) AS n FROM items').get()
     assert.equal(typeof items.n, 'number')
   })
 
   it('throws NO_FAMILY for unknown tenants', () => {
-    assert.throws(() => buildCtx('missing.lvh.me'), (e) => e.code === 'NO_FAMILY')
+    assert.throws(() => buildCtx({ headers: { host: 'missing.lvh.me' } }), (e) => e.code === 'NO_FAMILY')
     assert.throws(() => buildCtx(null), (e) => e.code === 'NO_FAMILY')
   })
 })

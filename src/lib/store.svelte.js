@@ -4,6 +4,8 @@ const STATE_KEY = 'groceries.state.v1'
 
 export const data = $state({ categories: [], items: [] })
 export const family = $state({ name: '', subdomain: '' })
+export const user = $state({ id: null, email: '', display_name: '', role: null, families: [] })
+export const auth = $state({ status: 'loading' }) // loading | anon | authed
 export const ui = $state({
   ready: false,
   adding: false,
@@ -12,6 +14,31 @@ export const ui = $state({
   activeCategory: 'All',
   toast: null,
 })
+
+const AUTH_KEY = 'groceries.auth'
+
+function persistAuth(status) {
+  try {
+    localStorage.setItem(AUTH_KEY, status)
+  } catch {
+    /* ignore */
+  }
+}
+
+export function applyMeta(m) {
+  family.name = m.family?.name ?? ''
+  family.subdomain = m.family?.subdomain ?? ''
+  user.id = m.user?.id ?? null
+  user.email = m.user?.email ?? ''
+  user.display_name = m.user?.display_name ?? ''
+  user.role = m.role ?? null
+  user.families = Array.isArray(m.families) ? m.families : []
+  const status = m.user ? 'authed' : 'anon'
+  if (status !== 'loading') {
+    auth.status = status
+    persistAuth(status)
+  }
+}
 
 let toastTimer
 
@@ -47,27 +74,77 @@ function markDirty() {
 
 export async function load() {
   try {
-    const m = await rpc('meta')
-    family.name = m.family?.name ?? ''
-    family.subdomain = m.family?.subdomain ?? ''
+    const local = readLocal()
+    if (local) {
+      data.categories = local.categories
+      data.items = local.items.map((i) => ({ ...i, category_icon: i.category_icon ?? categoryIcon(i.category) }))
+      ui.ready = true
+    }
   } catch {
-    /* family info is a nice-to-have; list loading below still reports errors */
+    /* no local state */
   }
 
-  const local = readLocal()
-  if (local) {
-    data.categories = local.categories
-    data.items = local.items.map((i) => ({ ...i, category_icon: i.category_icon ?? categoryIcon(i.category) }))
-    ui.ready = true
+  try {
+    const m = await rpc('meta')
+    applyMeta(m)
+  } catch {
+    // offline — fall back to the last known auth state
+    try {
+      auth.status = localStorage.getItem(AUTH_KEY) === 'authed' ? 'authed' : 'anon'
+    } catch {
+      auth.status = 'anon'
+    }
   }
+
   try {
     const snap = await rpc('snapshot')
     refresh(snap)
-  } catch {
-    /* stay with local state while offline */
+  } catch (err) {
+    if (err.code === 'AUTH_REQUIRED') {
+      auth.status = 'anon'
+      persistAuth('anon')
+    } else if (err.code === 'FORBIDDEN') {
+      auth.status = 'anon'
+      persistAuth('anon')
+      toast('You’re not a member of this family', '🔒')
+    }
+    /* offline — stay with local state */
   } finally {
     ui.ready = true
   }
+}
+
+export async function login(email, password) {
+  const m = await rpc('auth.login', { email, password })
+  applyMeta(m)
+  toast(`Welcome back${m.user?.display_name ? ', ' + m.user.display_name : ''}!`, '👋')
+  await load()
+}
+
+export async function signup(email, password, name) {
+  const m = await rpc('auth.signup', { email, password, name })
+  applyMeta(m)
+  toast(m.role === 'admin' ? 'Family created — you’re the admin!' : 'Welcome to the family!', '🎉')
+  await load()
+}
+
+export async function logout() {
+  try {
+    await rpc('auth.logout')
+  } catch {
+    /* session may already be gone */
+  }
+  user.id = null
+  user.email = ''
+  user.display_name = ''
+  user.role = null
+  user.families = []
+  auth.status = 'anon'
+  persistAuth('anon')
+}
+
+export async function invite(email) {
+  return rpc('auth.invite', { email })
 }
 
 function sortItems() {

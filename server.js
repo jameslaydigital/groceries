@@ -4,6 +4,7 @@ import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
 import { extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
+import { randomBytes, scryptSync, timingSafeEqual, createHash } from 'node:crypto'
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url))
 const DIST = join(ROOT, 'dist')
@@ -45,6 +46,15 @@ const PLATFORM_MIGRATIONS = [
      expires_at TEXT NOT NULL
    );
    CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);`,
+  `CREATE TABLE IF NOT EXISTS invites (
+     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+     family_id  INTEGER NOT NULL REFERENCES families(id) ON DELETE CASCADE,
+     email      TEXT NOT NULL,
+     role       TEXT NOT NULL DEFAULT 'member',
+     created_by INTEGER REFERENCES users(id),
+     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+     UNIQUE (family_id, email)
+   );`,
 ]
 
 function migratePlatform(db) {
@@ -199,7 +209,126 @@ class TenantError extends Error {
   }
 }
 
-function buildCtx(host) {
+/* ------------------------------------------------------------------ */
+/* Authentication                                                       */
+/* ------------------------------------------------------------------ */
+
+const SESSION_COOKIE = 'groceries.session'
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
+const PASSWORD_MIN = 8
+
+function hashPassword(password) {
+  const salt = randomBytes(16)
+  const hash = scryptSync(password, salt, 64)
+  return `scrypt:${salt.toString('hex')}:${hash.toString('hex')}`
+}
+
+function verifyPassword(password, stored) {
+  if (typeof stored !== 'string') return false
+  const [alg, saltHex, hashHex] = stored.split(':')
+  if (alg !== 'scrypt' || !saltHex || !hashHex) return false
+  const salt = Buffer.from(saltHex, 'hex')
+  const expected = Buffer.from(hashHex, 'hex')
+  const actual = scryptSync(password, salt, expected.length)
+  return timingSafeEqual(actual, expected)
+}
+
+const sha256 = (s) => createHash('sha256').update(s).digest('hex')
+
+function newSessionToken() {
+  return randomBytes(32).toString('base64url')
+}
+
+function parseCookies(header = '') {
+  const out = {}
+  for (const part of header.split(';')) {
+    const idx = part.indexOf('=')
+    if (idx === -1) continue
+    const name = part.slice(0, idx).trim()
+    const value = part.slice(idx + 1).trim()
+    if (name) out[name] = decodeURIComponent(value)
+  }
+  return out
+}
+
+function cookieDomainFor(host) {
+  const h = String(host ?? '').split(':')[0].toLowerCase()
+  if (process.env.COOKIE_DOMAIN) return process.env.COOKIE_DOMAIN
+  if (h === 'localhost' || h === '127.0.0.1' || h === '::1' || h.startsWith('[')) return ''
+  if (h.endsWith('.lvh.me')) return '.lvh.me'
+  return ''
+}
+
+function isSecureHost(host) {
+  return process.env.COOKIE_SECURE === '1'
+}
+
+function buildSessionCookie(token, host) {
+  const parts = [`${SESSION_COOKIE}=${token}`, 'HttpOnly', 'SameSite=Lax', 'Path=/']
+  const domain = cookieDomainFor(host)
+  if (domain) parts.push(`Domain=${domain}`)
+  if (isSecureHost(host)) parts.push('Secure')
+  parts.push(`Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`)
+  return parts.join('; ')
+}
+
+function buildExpiredCookie(host) {
+  const parts = [`${SESSION_COOKIE}=`, 'HttpOnly', 'SameSite=Lax', 'Path=/']
+  const domain = cookieDomainFor(host)
+  if (domain) parts.push(`Domain=${domain}`)
+  if (isSecureHost(host)) parts.push('Secure')
+  parts.push('Max-Age=0', 'Expires=Thu, 01 Jan 1970 00:00:00 GMT')
+  return parts.join('; ')
+}
+
+const normalizeEmail = (email) => String(email ?? '').trim().toLowerCase()
+
+function memberFamiliesForUser(userId) {
+  return platform
+    .prepare(
+      `SELECT f.id, f.subdomain, f.name, m.role
+       FROM memberships m JOIN families f ON f.id = m.family_id
+       WHERE m.user_id = ?
+       ORDER BY f.name`
+    )
+    .all(userId)
+}
+
+function loadUserById(id) {
+  return platform.prepare('SELECT id, email, display_name FROM users WHERE id = ?').get(id)
+}
+
+function issueSession(userId, ctx) {
+  const token = newSessionToken()
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString()
+  platform
+    .prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)')
+    .run(sha256(token), userId, expiresAt)
+  ctx.cookies.push(buildSessionCookie(token, ctx.host))
+  return token
+}
+
+function destroySession(ctx) {
+  ctx.cookies.push(buildExpiredCookie(ctx.host))
+}
+
+function authResult(user, subdomain) {
+  const families = memberFamiliesForUser(user.id)
+  const membership = families.find((f) => f.subdomain === subdomain)
+  return {
+    family: platform.prepare('SELECT * FROM families WHERE subdomain = ?').get(subdomain),
+    user: { id: user.id, email: user.email, display_name: user.display_name },
+    role: membership?.role ?? null,
+    families,
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Tenant resolution + request context                                  */
+/* ------------------------------------------------------------------ */
+
+function buildCtx(req) {
+  const host = req?.headers?.host
   const subdomain = tenantKeyFromHost(host)
   if (!subdomain) throw new TenantError('Could not determine family from host', 'NO_FAMILY')
   const family = platform.prepare('SELECT * FROM families WHERE subdomain = ?').get(subdomain)
@@ -210,8 +339,28 @@ function buildCtx(host) {
     )
   }
   const db = getTenantDb(subdomain)
-  // Phase 1 (auth) will populate `user` and `families` from the session cookie.
-  return { db, family, user: null, families: [] }
+
+  // Resolve the session from the cookie, if any.
+  const token = parseCookies(req?.headers?.cookie)[SESSION_COOKIE]
+  let user = null
+  let role = null
+  let families = []
+  let memberships = []
+  if (token) {
+    const session = platform.prepare('SELECT user_id, expires_at FROM sessions WHERE token = ?').get(sha256(token))
+    if (session && new Date(session.expires_at).getTime() > Date.now()) {
+      user = loadUserById(session.user_id)
+      memberships = memberFamiliesForUser(user.id)
+      const membership = memberships.find((m) => m.subdomain === subdomain)
+      role = membership?.role ?? null
+    }
+  }
+
+  const { n: memberCount } = platform
+    .prepare('SELECT COUNT(*) AS n FROM memberships WHERE family_id = ?')
+    .get(family.id)
+
+  return { db, family, user, role, families: memberships, bootstrap: memberCount === 0 }
 }
 
 /* ------------------------------------------------------------------ */
@@ -257,7 +406,110 @@ const methods = {
   },
 
   meta(ctx) {
-    return { family: ctx.family, user: ctx.user, families: ctx.families }
+    return {
+      family: ctx.family,
+      user: ctx.user,
+      role: ctx.role,
+      families: ctx.families,
+      bootstrap: ctx.bootstrap,
+    }
+  },
+
+  'auth.signup'(ctx, { email, password, name }) {
+    const normalized = normalizeEmail(email)
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+      throw Object.assign(new Error('Enter a valid email address'), { code: 'INVALID_ARGS' })
+    }
+    if (typeof password !== 'string' || password.length < PASSWORD_MIN) {
+      throw Object.assign(new Error(`Password must be at least ${PASSWORD_MIN} characters`), { code: 'INVALID_ARGS' })
+    }
+    if (name && String(name).trim().length > 60) {
+      throw Object.assign(new Error('Display name is too long'), { code: 'INVALID_ARGS' })
+    }
+
+    // Who gets to join? First user of an empty family becomes admin;
+    // everyone else needs an invite from an admin.
+    let role = 'member'
+    if (ctx.bootstrap) {
+      role = 'admin'
+    } else {
+      const invite = platform
+        .prepare('SELECT id FROM invites WHERE family_id = ? AND LOWER(email) = ?')
+        .get(ctx.family.id, normalized)
+      if (!invite) {
+        throw Object.assign(
+          new Error('This family is private — ask an admin to invite you.'),
+          { code: 'FORBIDDEN' }
+        )
+      }
+      platform.prepare('DELETE FROM invites WHERE id = ?').run(invite.id)
+    }
+
+    let user = platform.prepare('SELECT * FROM users WHERE email = ?').get(normalized)
+    if (user) {
+      if (!verifyPassword(password, user.password_hash)) {
+        throw Object.assign(new Error('Incorrect password'), { code: 'AUTH_FAILED' })
+      }
+    } else {
+      const info = platform
+        .prepare('INSERT INTO users (email, password_hash, display_name) VALUES (?, ?, ?)')
+        .run(normalized, hashPassword(password), name?.trim() || null)
+      user = { id: info.lastInsertRowid, email: normalized, display_name: name?.trim() || null }
+    }
+
+    const existing = platform
+      .prepare('SELECT * FROM memberships WHERE user_id = ? AND family_id = ?')
+      .get(user.id, ctx.family.id)
+    if (!existing) {
+      platform
+        .prepare('INSERT INTO memberships (user_id, family_id, role) VALUES (?, ?, ?)')
+        .run(user.id, ctx.family.id, role)
+    }
+
+    issueSession(user.id, ctx)
+    return authResult(user, ctx.family.subdomain)
+  },
+
+  'auth.login'(ctx, { email, password }) {
+    const normalized = normalizeEmail(email)
+    const user = platform.prepare('SELECT * FROM users WHERE email = ?').get(normalized)
+    if (!user || !verifyPassword(password, user.password_hash)) {
+      throw Object.assign(new Error('Incorrect email or password'), { code: 'AUTH_FAILED' })
+    }
+    const membership = platform
+      .prepare('SELECT * FROM memberships WHERE user_id = ? AND family_id = ?')
+      .get(user.id, ctx.family.id)
+    if (!membership) {
+      throw Object.assign(new Error("You're not a member of this family"), { code: 'FORBIDDEN' })
+    }
+    issueSession(user.id, ctx)
+    return authResult(user, ctx.family.subdomain)
+  },
+
+  'auth.logout'(ctx) {
+    const token = parseCookies(ctx.headers?.cookie)[SESSION_COOKIE]
+    if (token) {
+      platform.prepare('DELETE FROM sessions WHERE token = ?').run(sha256(token))
+    }
+    destroySession(ctx)
+    return { ok: true }
+  },
+
+  'auth.invite'(ctx, { email }) {
+    if (ctx.role !== 'admin') {
+      throw Object.assign(new Error('Only admins can invite'), { code: 'FORBIDDEN' })
+    }
+    const normalized = normalizeEmail(email)
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+      throw Object.assign(new Error('Enter a valid email address'), { code: 'INVALID_ARGS' })
+    }
+    platform
+      .prepare(
+        `INSERT INTO invites (family_id, email, role, created_by) VALUES (?, ?, 'member', ?)
+         ON CONFLICT (family_id, email) DO NOTHING`
+      )
+      .run(ctx.family.id, normalized, ctx.user.id)
+    return { invited: normalized }
   },
 
   listCategories(ctx) {
@@ -382,6 +634,8 @@ async function serveStatic(req, res, pathname) {
   }
 }
 
+const PUBLIC_METHODS = new Set(['ping', 'meta', 'auth.signup', 'auth.login', 'auth.logout'])
+
 async function handleRpc(req, res) {
   let body = ''
   for await (const chunk of req) body += chunk
@@ -401,25 +655,45 @@ async function handleRpc(req, res) {
 
   let ctx
   try {
-    ctx = buildCtx(req.headers.host)
+    ctx = buildCtx(req)
+    ctx.host = req.headers?.host
+    ctx.headers = req.headers
+    ctx.cookies = []
   } catch (err) {
     return send(res, 404, { ok: false, error: { code: err.code || 'NO_FAMILY', message: err.message } })
   }
 
+  // Guard protected methods. Open while a family is unclaimed (bootstrap);
+  // otherwise a valid session + membership in THIS family is required.
+  if (!PUBLIC_METHODS.has(method)) {
+    if (ctx.user && ctx.role) {
+      /* ok */
+    } else if (ctx.bootstrap && !ctx.user) {
+      /* open until the first member signs up */
+    } else if (!ctx.user) {
+      return send(res, 401, { ok: false, error: { code: 'AUTH_REQUIRED', message: 'Log in to continue' } }, ctx)
+    } else {
+      return send(res, 403, { ok: false, error: { code: 'FORBIDDEN', message: "You're not a member of this family" } }, ctx)
+    }
+  }
+
   try {
     const result = await handler(ctx, ...(Array.isArray(params) ? params : [params]))
-    send(res, 200, { ok: true, result })
+    send(res, 200, { ok: true, result }, ctx)
   } catch (err) {
-    const status = err.code === 'NOT_FOUND' ? 404 : err.code === 'INVALID_ARGS' ? 400 : 500
-    send(res, status, { ok: false, error: { code: err.code || 'INTERNAL', message: err.message } })
+    const status =
+      err.code === 'NOT_FOUND' ? 404 : err.code === 'INVALID_ARGS' ? 400 : err.code === 'FORBIDDEN' ? 403 : err.code === 'AUTH_FAILED' ? 401 : 500
+    send(res, status, { ok: false, error: { code: err.code || 'INTERNAL', message: err.message } }, ctx)
   }
 }
 
-function send(res, status, payload) {
-  res.writeHead(status, {
+function send(res, status, payload, ctx) {
+  const headers = {
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Origin': '*',
-  })
+  }
+  if (ctx?.cookies?.length) headers['Set-Cookie'] = ctx.cookies
+  res.writeHead(status, headers)
   res.end(JSON.stringify(payload))
 }
 
@@ -455,7 +729,18 @@ export function createApp() {
   })
 }
 
-export { tenantKeyFromHost, buildCtx, getTenantDb, DEFAULT_SUBDOMAIN, DATA_DIR, TenantError }
+export {
+  tenantKeyFromHost,
+  buildCtx,
+  getTenantDb,
+  DEFAULT_SUBDOMAIN,
+  DATA_DIR,
+  TenantError,
+  platform,
+  hashPassword,
+  verifyPassword,
+  authResult,
+}
 
 if (import.meta.main) {
   createApp().listen(PORT, () => {
