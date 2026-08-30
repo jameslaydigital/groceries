@@ -27,3 +27,6 @@ dist-ssr
 *.db
 *.db-wal
 *.db-shm
+
+# Per-family tenant databases
+families/

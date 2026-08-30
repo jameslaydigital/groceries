@@ -3,6 +3,7 @@ import rpc from './rpc.js'
 const STATE_KEY = 'groceries.state.v1'
 
 export const data = $state({ categories: [], items: [] })
+export const family = $state({ name: '', subdomain: '' })
 export const ui = $state({
   ready: false,
   adding: false,
@@ -45,6 +46,14 @@ function markDirty() {
 }
 
 export async function load() {
+  try {
+    const m = await rpc('meta')
+    family.name = m.family?.name ?? ''
+    family.subdomain = m.family?.subdomain ?? ''
+  } catch {
+    /* family info is a nice-to-have; list loading below still reports errors */
+  }
+
   const local = readLocal()
   if (local) {
     data.categories = local.categories

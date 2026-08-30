@@ -3,7 +3,7 @@
   import ProgressRing from './components/ProgressRing.svelte'
   import ItemRow from './components/ItemRow.svelte'
   import AddSheet from './components/AddSheet.svelte'
-  import { data, ui, load, clearChecked, toast } from './lib/store.svelte.js'
+  import { data, ui, load, clearChecked, toast, family } from './lib/store.svelte.js'
   import rpc from './lib/rpc.js'
 
   let showSheet = $state(false)
@@ -120,6 +120,9 @@
         <p>{subtitle}</p>
       </div>
       <div class="header-right">
+        {#if family.name}
+          <span class="family-pill" title={family.subdomain}>{family.name}</span>
+        {/if}
         {#if installPrompt && !installed}
           <button class="install" onclick={install} aria-label="Install app">⤓ Install</button>
         {/if}
@@ -334,6 +337,19 @@
   }
   .install:active {
     transform: scale(0.94);
+  }
+  .family-pill {
+    font-size: 11.5px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+    color: var(--accent);
+    background: var(--accent-tint);
+    border-radius: 999px;
+    padding: 5px 11px;
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .search-wrap {

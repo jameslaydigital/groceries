@@ -6,9 +6,9 @@ A grocery list PWA for a family. Mobile-first, offline-capable, installable. Bac
 
 ---
 
-## Phase 0 — Multi-tenancy foundation
+## Phase 0 — Multi-tenancy foundation ✅ done
 
-The current `server.js` opens a single `groceries.db` at startup and every RPC handler uses a global `db`. That has to change before anything else.
+The current `server.js` opened a single `groceries.db` at startup and every RPC handler used a global `db`. Now it's multi-tenant.
 
 **Two databases:**
 - **`platform.db`** (global): `users`, `families`, `memberships`, `sessions`

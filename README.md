@@ -11,7 +11,17 @@ npm run build        # production build into dist/
 npm start            # serves dist/ + the RPC API on :8787
 ```
 
-In production you just need `npm run build && npm start`. The DB (`groceries.db`) is created and seeded automatically on first run.
+The server is multi-tenant. Each **family** gets its own SQLite file (`families/<subdomain>.db`) and you pick which family you're looking at by subdomain:
+
+```bash
+npm start
+# then visit http://localhost:8787           → default family ("home")
+#      or http://home.lvh.me:8787            → same default family
+npm run family -- create james "James Family"
+# then visit http://james.lvh.me:8787        → the new family's list
+```
+
+`lvh.me` resolves every subdomain to `127.0.0.1`, so this works locally with zero DNS setup. Global data (users, families, sessions) lives in `platform.db`; per-family data lives in `families/*.db`. If a legacy single-tenant `groceries.db` exists on first run, it's adopted as the `home` family's database.
 
 ## The RPC layer
 
@@ -26,12 +36,13 @@ await rpc('setChecked', id, true)
 ```
 
 - **Client:** `src/lib/rpc.js` — `rpc(method, ...params)`, plus an offline queue (mutations are persisted in `localStorage` and replayed when back online).
-- **Server:** `server.js` — the method dispatcher (`methods` map) backed by a `DatabaseSync` SQLite connection.
+- **Server:** `server.js` — the method dispatcher (`methods` map) backed by SQLite. Each request resolves its family from the `Host` header, opens that family's tenant database, and passes a `ctx = { db, family, user, families }` to the handler.
 
 ### Methods
 
 | Method          | Params                                 | Returns                              |
 | --------------- | -------------------------------------- | ------------------------------------ |
+| `meta`          | —                                      | `{ family, user, families }`         |
 | `ping`          | —                                      | `{ pong }`                           |
 | `snapshot`      | —                                      | `{ categories, items }`              |
 | `listCategories`| —                                      | categories with item counts          |
@@ -52,7 +63,8 @@ await rpc('setChecked', id, true)
 ## Layout
 
 ```
-server.js                  Node + node:sqlite HTTP server, RPC dispatcher, static serving
+server.js                  Node + node:sqlite HTTP server, platform DB + tenant resolver, RPC dispatcher
+scripts/create-family.mjs  CLI to provision a new family (npm run family)
 src/lib/rpc.js             rpc() client + offline queue
 src/lib/store.svelte.js    Svelte 5 runes store, optimistic updates, local persistence
 src/App.svelte             shell: header + progress ring, search, category chips, list, FAB

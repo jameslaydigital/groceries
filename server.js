@@ -1,40 +1,119 @@
 import { createServer } from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
+import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
 import { extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url))
 const DIST = join(ROOT, 'dist')
+const DATA_DIR = join(ROOT, 'families')
 const PORT = process.env.PORT || 8787
+const DEFAULT_SUBDOMAIN = process.env.DEFAULT_SUBDOMAIN || 'home'
 
-const db = new DatabaseSync(join(ROOT, 'groceries.db'))
+mkdirSync(DATA_DIR, { recursive: true })
 
-db.exec(`
-  PRAGMA journal_mode = WAL;
-  PRAGMA foreign_keys = ON;
+/* ------------------------------------------------------------------ */
+/* Platform database (users, families, memberships, sessions)          */
+/* ------------------------------------------------------------------ */
 
-  CREATE TABLE IF NOT EXISTS categories (
-    id         INTEGER PRIMARY KEY,
-    name       TEXT NOT NULL UNIQUE,
-    icon       TEXT NOT NULL DEFAULT '🛒',
-    sort_order INTEGER NOT NULL DEFAULT 0
-  );
+const PLATFORM_MIGRATIONS = [
+  `CREATE TABLE IF NOT EXISTS families (
+     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+     subdomain  TEXT NOT NULL UNIQUE,
+     name       TEXT NOT NULL,
+     created_at TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE TABLE IF NOT EXISTS users (
+     id            INTEGER PRIMARY KEY AUTOINCREMENT,
+     email         TEXT NOT NULL UNIQUE,
+     password_hash TEXT NOT NULL,
+     display_name  TEXT,
+     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE TABLE IF NOT EXISTS memberships (
+     user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     family_id INTEGER NOT NULL REFERENCES families(id) ON DELETE CASCADE,
+     role      TEXT NOT NULL DEFAULT 'member',
+     PRIMARY KEY (user_id, family_id)
+   );
+   CREATE TABLE IF NOT EXISTS sessions (
+     token      TEXT PRIMARY KEY,
+     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+     expires_at TEXT NOT NULL
+   );
+   CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);`,
+]
 
-  CREATE TABLE IF NOT EXISTS items (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    name       TEXT NOT NULL,
-    quantity   TEXT NOT NULL DEFAULT '1',
-    category   TEXT NOT NULL DEFAULT 'Other' REFERENCES categories(name),
-    checked    INTEGER NOT NULL DEFAULT 0,
-    position   INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  );
+function migratePlatform(db) {
+  db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;')
+  const { user_version } = db.prepare('PRAGMA user_version').get()
+  for (let v = user_version + 1; v <= PLATFORM_MIGRATIONS.length; v++) {
+    db.exec('BEGIN')
+    try {
+      db.exec(PLATFORM_MIGRATIONS[v - 1])
+      db.exec(`PRAGMA user_version = ${v}`)
+      db.exec('COMMIT')
+    } catch (err) {
+      db.exec('ROLLBACK')
+      throw err
+    }
+  }
+}
 
-  CREATE INDEX IF NOT EXISTS idx_items_category ON items(category);
-  CREATE INDEX IF NOT EXISTS idx_items_checked ON items(checked);
-`)
+const platform = new DatabaseSync(join(ROOT, 'platform.db'))
+migratePlatform(platform)
+
+/* Adopt a legacy single-tenant groceries.db into the default family if
+   that family has no database yet — keeps existing lists around. */
+function adoptLegacyDb() {
+  const legacy = join(ROOT, 'groceries.db')
+  const target = join(DATA_DIR, `${DEFAULT_SUBDOMAIN}.db`)
+  if (existsSync(legacy) && !existsSync(target)) {
+    copyFileSync(legacy, target)
+    console.log(`📦 adopted legacy database → ${target}`)
+  }
+}
+
+/* Seed a default family so localhost just works out of the box. */
+function seedDefaultFamily() {
+  const row = platform.prepare('SELECT id FROM families WHERE subdomain = ?').get(DEFAULT_SUBDOMAIN)
+  if (!row) {
+    platform
+      .prepare('INSERT INTO families (subdomain, name) VALUES (?, ?)')
+      .run(DEFAULT_SUBDOMAIN, DEFAULT_SUBDOMAIN.charAt(0).toUpperCase() + DEFAULT_SUBDOMAIN.slice(1))
+    console.log(`🏠 seeded default family "${DEFAULT_SUBDOMAIN}"`)
+  }
+}
+
+adoptLegacyDb()
+seedDefaultFamily()
+
+/* ------------------------------------------------------------------ */
+/* Tenant databases (one sqlite file per family)                        */
+/* ------------------------------------------------------------------ */
+
+const TENANT_MIGRATIONS = [
+  `CREATE TABLE IF NOT EXISTS categories (
+     id         INTEGER PRIMARY KEY,
+     name       TEXT NOT NULL UNIQUE,
+     icon       TEXT NOT NULL DEFAULT '🛒',
+     sort_order INTEGER NOT NULL DEFAULT 0
+   );
+   CREATE TABLE IF NOT EXISTS items (
+     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+     name       TEXT NOT NULL,
+     quantity   TEXT NOT NULL DEFAULT '1',
+     category   TEXT NOT NULL DEFAULT 'Other' REFERENCES categories(name),
+     checked    INTEGER NOT NULL DEFAULT 0,
+     position   INTEGER NOT NULL DEFAULT 0,
+     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE INDEX IF NOT EXISTS idx_items_category ON items(category);
+   CREATE INDEX IF NOT EXISTS idx_items_checked ON items(checked);`,
+]
 
 const DEFAULT_CATEGORIES = [
   ['Produce', '🥬', 1],
@@ -49,77 +128,159 @@ const DEFAULT_CATEGORIES = [
   ['Other', '🛒', 99],
 ]
 
-const seed = db.prepare('SELECT COUNT(*) AS n FROM categories').get()
-if (seed.n === 0) {
-  const ins = db.prepare('INSERT INTO categories (name, icon, sort_order) VALUES (?, ?, ?)')
-  for (const c of DEFAULT_CATEGORIES) ins.run(...c)
+function migrateTenant(db) {
+  db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;')
+  const { user_version } = db.prepare('PRAGMA user_version').get()
+  for (let v = user_version + 1; v <= TENANT_MIGRATIONS.length; v++) {
+    db.exec('BEGIN')
+    try {
+      db.exec(TENANT_MIGRATIONS[v - 1])
+      db.exec(`PRAGMA user_version = ${v}`)
+      db.exec('COMMIT')
+    } catch (err) {
+      db.exec('ROLLBACK')
+      throw err
+    }
+  }
+
+  const { n } = db.prepare('SELECT COUNT(*) AS n FROM categories').get()
+  if (n === 0) {
+    const ins = db.prepare('INSERT INTO categories (name, icon, sort_order) VALUES (?, ?, ?)')
+    for (const c of DEFAULT_CATEGORIES) ins.run(...c)
+  }
 }
 
-const listCategories = db.prepare(`
-  SELECT c.name, c.icon, c.sort_order, COUNT(i.id) AS item_count
-  FROM categories c
-  LEFT JOIN items i ON i.category = c.name AND i.checked = 0
-  GROUP BY c.id
-  ORDER BY c.sort_order, c.name
-`)
+const tenantCache = new Map()
 
-const listItems = db.prepare(`
-  SELECT i.id, i.name, i.quantity, i.category, i.checked,
-         c.icon AS category_icon, c.sort_order AS category_order
-  FROM items i
-  JOIN categories c ON c.name = i.category
-  ORDER BY c.sort_order, i.checked, LOWER(i.name)
-`)
+function getTenantDb(subdomain) {
+  let db = tenantCache.get(subdomain)
+  if (!db) {
+    db = new DatabaseSync(join(DATA_DIR, `${subdomain}.db`))
+    migrateTenant(db)
+    tenantCache.set(subdomain, db)
+  }
+  return db
+}
 
-const getItem = db.prepare('SELECT * FROM items WHERE id = ?')
-const addItemStmt = db.prepare(
-  'INSERT INTO items (name, quantity, category, position) VALUES (?, ?, ?, COALESCE((SELECT MAX(position) + 1 FROM items), 0))'
-)
-const updateItemStmt = db.prepare(
-  `UPDATE items SET name = COALESCE(?, name), quantity = COALESCE(?, quantity),
-     category = COALESCE(?, category), checked = COALESCE(?, checked),
-     updated_at = datetime('now') WHERE id = ?`
-)
-const deleteItemStmt = db.prepare('DELETE FROM items WHERE id = ?')
-const clearCheckedStmt = db.prepare('DELETE FROM items WHERE checked = 1')
+/* ------------------------------------------------------------------ */
+/* Tenant resolution from the Host header                               */
+/* ------------------------------------------------------------------ */
+
+function tenantKeyFromHost(host) {
+  let h = String(host || '').split(':')[0].toLowerCase()
+  if (!h) return null
+  if (h === 'localhost' || h === '127.0.0.1' || h === '::1') return DEFAULT_SUBDOMAIN
+  for (const bare of ['lvh.me']) {
+    if (h === bare) return DEFAULT_SUBDOMAIN
+    if (h.endsWith('.' + bare)) {
+      const key = h.slice(0, -(bare.length + 1))
+      return key || DEFAULT_SUBDOMAIN
+    }
+  }
+  return h.replace(/[^a-z0-9-]/g, '-')
+}
+
+class TenantError extends Error {
+  constructor(message, code = 'NO_FAMILY') {
+    super(message)
+    this.code = code
+  }
+}
+
+function buildCtx(host) {
+  const subdomain = tenantKeyFromHost(host)
+  if (!subdomain) throw new TenantError('Could not determine family from host', 'NO_FAMILY')
+  const family = platform.prepare('SELECT * FROM families WHERE subdomain = ?').get(subdomain)
+  if (!family) {
+    throw new TenantError(
+      `No family found for "${subdomain}". Create one with: npm run family create ${subdomain} "<Name>"`,
+      'NO_FAMILY'
+    )
+  }
+  const db = getTenantDb(subdomain)
+  // Phase 1 (auth) will populate `user` and `families` from the session cookie.
+  return { db, family, user: null, families: [] }
+}
+
+/* ------------------------------------------------------------------ */
+/* RPC methods                                                          */
+/* ------------------------------------------------------------------ */
+
+const listCategories = (db) =>
+  db.prepare(`
+    SELECT c.name, c.icon, c.sort_order, COUNT(i.id) AS item_count
+    FROM categories c
+    LEFT JOIN items i ON i.category = c.name AND i.checked = 0
+    GROUP BY c.id
+    ORDER BY c.sort_order, c.name
+  `)
+
+const listItems = (db) =>
+  db.prepare(`
+    SELECT i.id, i.name, i.quantity, i.category, i.checked,
+           c.icon AS category_icon, c.sort_order AS category_order
+    FROM items i
+    JOIN categories c ON c.name = i.category
+    ORDER BY c.sort_order, i.checked, LOWER(i.name)
+  `)
+
+const getItem = (db) => db.prepare('SELECT * FROM items WHERE id = ?')
+const addItemStmt = (db) =>
+  db.prepare(
+    'INSERT INTO items (name, quantity, category, position) VALUES (?, ?, ?, COALESCE((SELECT MAX(position) + 1 FROM items), 0))'
+  )
+const updateItemStmt = (db) =>
+  db.prepare(
+    `UPDATE items SET name = COALESCE(?, name), quantity = COALESCE(?, quantity),
+       category = COALESCE(?, category), checked = COALESCE(?, checked),
+       updated_at = datetime('now') WHERE id = ?`
+  )
+const deleteItemStmt = (db) => db.prepare('DELETE FROM items WHERE id = ?')
+const clearCheckedStmt = (db) => db.prepare('DELETE FROM items WHERE checked = 1')
+const catExists = (db) => db.prepare('SELECT id FROM categories WHERE name = ?')
 
 const methods = {
-  async ping() {
+  ping() {
     return { pong: Date.now() }
   },
 
-  async listCategories() {
-    return listCategories.all()
+  meta(ctx) {
+    return { family: ctx.family, user: ctx.user, families: ctx.families }
   },
 
-  async listItems() {
-    return listItems.all()
+  listCategories(ctx) {
+    return listCategories(ctx.db).all()
   },
 
-  async snapshot() {
+  listItems(ctx) {
+    return listItems(ctx.db).all()
+  },
+
+  snapshot(ctx) {
     return {
-      categories: listCategories.all(),
-      items: listItems.all(),
+      categories: listCategories(ctx.db).all(),
+      items: listItems(ctx.db).all(),
     }
   },
 
-  async addItem({ name, quantity, category }) {
+  addItem(ctx, { name, quantity, category }) {
+    const db = ctx.db
     const n = String(name ?? '').trim()
     if (!n) throw Object.assign(new Error('Name is required'), { code: 'INVALID_ARGS' })
     const qty = String(quantity ?? '1').trim() || '1'
     const cat = String(category ?? 'Other').trim() || 'Other'
 
-    const catExists = db.prepare('SELECT id FROM categories WHERE name = ?').get(cat)
-    if (!catExists) {
+    if (!catExists(db).get(cat)) {
       db.prepare('INSERT INTO categories (name) VALUES (?)').run(cat)
     }
 
-    const info = addItemStmt.run(n, qty, cat)
-    return getItem.get(info.lastInsertRowid)
+    const info = addItemStmt(db).run(n, qty, cat)
+    return getItem(db).get(info.lastInsertRowid)
   },
 
-  async updateItem(id, patch = {}) {
-    const existing = getItem.get(id)
+  updateItem(ctx, id, patch = {}) {
+    const db = ctx.db
+    const existing = getItem(db).get(id)
     if (!existing) throw Object.assign(new Error('Item not found'), { code: 'NOT_FOUND' })
 
     const name = patch.name !== undefined ? String(patch.name).trim() : undefined
@@ -128,40 +289,45 @@ const methods = {
     }
     const quantity = patch.quantity !== undefined ? String(patch.quantity).trim() || '1' : undefined
     let category = patch.category !== undefined ? String(patch.category).trim() : undefined
-    if (category && !db.prepare('SELECT id FROM categories WHERE name = ?').get(category)) {
+    if (category && !catExists(db).get(category)) {
       db.prepare('INSERT INTO categories (name) VALUES (?)').run(category)
     }
     const checked = patch.checked !== undefined ? (patch.checked ? 1 : 0) : undefined
 
-    updateItemStmt.run(name ?? null, quantity ?? null, category ?? null, checked ?? null, id)
-    return getItem.get(id)
+    updateItemStmt(db).run(name ?? null, quantity ?? null, category ?? null, checked ?? null, id)
+    return getItem(db).get(id)
   },
 
-  async setChecked(id, checked) {
-    const existing = getItem.get(id)
+  setChecked(ctx, id, checked) {
+    const db = ctx.db
+    const existing = getItem(db).get(id)
     if (!existing) throw Object.assign(new Error('Item not found'), { code: 'NOT_FOUND' })
-    updateItemStmt.run(null, null, null, checked ? 1 : 0, id)
-    return getItem.get(id)
+    updateItemStmt(db).run(null, null, null, checked ? 1 : 0, id)
+    return getItem(db).get(id)
   },
 
-  async deleteItem(id) {
-    deleteItemStmt.run(id)
+  deleteItem(ctx, id) {
+    deleteItemStmt(ctx.db).run(id)
     return { id }
   },
 
-  async clearChecked() {
-    const info = clearCheckedStmt.run()
+  clearChecked(ctx) {
+    const info = clearCheckedStmt(ctx.db).run()
     return { removed: info.changes }
   },
 
-  async suggestions(prefix = '', limit = 8) {
+  suggestions(ctx, prefix = '', limit = 8) {
     const p = `%${String(prefix).trim()}%`
-    const rows = db
+    const rows = ctx.db
       .prepare(`SELECT DISTINCT name, category FROM items WHERE LOWER(name) LIKE LOWER(?) ORDER BY name LIMIT ?`)
       .all(p, Math.max(1, Math.min(20, Number(limit) || 8)))
     return rows
   },
 }
+
+/* ------------------------------------------------------------------ */
+/* HTTP layer                                                           */
+/* ------------------------------------------------------------------ */
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -221,8 +387,15 @@ async function handleRpc(req, res) {
     return send(res, 404, { ok: false, error: { code: 'UNKNOWN_METHOD', message: `Unknown method: ${method}` } })
   }
 
+  let ctx
   try {
-    const result = await handler(...(Array.isArray(params) ? params : [params]))
+    ctx = buildCtx(req.headers.host)
+  } catch (err) {
+    return send(res, 404, { ok: false, error: { code: err.code || 'NO_FAMILY', message: err.message } })
+  }
+
+  try {
+    const result = await handler(ctx, ...(Array.isArray(params) ? params : [params]))
     send(res, 200, { ok: true, result })
   } catch (err) {
     const status = err.code === 'NOT_FOUND' ? 404 : err.code === 'INVALID_ARGS' ? 400 : 500
@@ -243,7 +416,11 @@ const server = createServer(async (req, res) => {
   const pathname = url.pathname
 
   if (req.method === 'OPTIONS') {
-    res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, GET', 'Access-Control-Allow-Headers': 'Content-Type' })
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, GET',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    })
     return res.end()
   }
 
@@ -256,4 +433,5 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`🍎 groceries server running → http://localhost:${PORT}`)
+  console.log(`   families: {subdomain}.lvh.me:${PORT}  (default: ${DEFAULT_SUBDOMAIN})`)
 })
