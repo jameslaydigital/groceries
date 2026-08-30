@@ -14,6 +14,14 @@ const PORT = process.env.PORT || 8787
 const DEFAULT_SUBDOMAIN = process.env.DEFAULT_SUBDOMAIN || 'home'
 // Production base domain, e.g. "example.com" → home.example.com, james.example.com
 const BASE_DOMAIN = String(process.env.BASE_DOMAIN ?? '').trim().toLowerCase()
+// Extra hosts (e.g. a bare server IP) that should map to the default tenant,
+// useful before DNS/subdomains are wired up.
+const DEFAULT_HOSTS = new Set(
+  String(process.env.DEFAULT_HOSTS ?? '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+)
 
 mkdirSync(DATA_DIR, { recursive: true })
 
@@ -218,6 +226,7 @@ function tenantKeyFromHost(host) {
   if (/^\[[^\]]+\](?::\d+)?$/.test(h)) return DEFAULT_SUBDOMAIN
   h = h.split(':')[0]
   if (h === 'localhost' || h === '127.0.0.1' || h === '::1') return DEFAULT_SUBDOMAIN
+  if (DEFAULT_HOSTS.has(h)) return DEFAULT_SUBDOMAIN
   for (const bare of ['lvh.me', BASE_DOMAIN].filter(Boolean)) {
     if (h === bare) return DEFAULT_SUBDOMAIN
     if (h.endsWith('.' + bare)) {

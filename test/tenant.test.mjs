@@ -12,6 +12,7 @@ process.env.DATA_DIR = DATA_DIR
 process.env.PLATFORM_DB = join(DATA_DIR, 'platform.db')
 process.env.SKIP_LEGACY_ADOPTION = '1'
 process.env.BASE_DOMAIN = 'example.com'
+process.env.DEFAULT_HOSTS = '10.0.0.9,203.0.113.7'
 
 const {
   tenantKeyFromHost,
@@ -115,6 +116,14 @@ describe('tenantKeyFromHost', () => {
     assert.equal(tenantKeyFromHost('127.0.0.1:8787'), DEFAULT_SUBDOMAIN)
     assert.equal(tenantKeyFromHost('lvh.me'), DEFAULT_SUBDOMAIN)
     assert.equal(tenantKeyFromHost('lvh.me:8787'), DEFAULT_SUBDOMAIN)
+  })
+
+  it('maps explicitly configured DEFAULT_HOSTS to the default tenant', () => {
+    assert.equal(tenantKeyFromHost('10.0.0.9'), DEFAULT_SUBDOMAIN)
+    assert.equal(tenantKeyFromHost('10.0.0.9:8787'), DEFAULT_SUBDOMAIN)
+    assert.equal(tenantKeyFromHost('203.0.113.7'), DEFAULT_SUBDOMAIN)
+    // unlisted hosts are not silently mapped
+    assert.notEqual(tenantKeyFromHost('198.51.100.55'), DEFAULT_SUBDOMAIN)
   })
 
   it('handles a production BASE_DOMAIN', () => {

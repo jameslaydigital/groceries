@@ -1,87 +1,133 @@
-# Deploying to a DigitalOcean Droplet with Caddy
+# Deploying Syncart to a Linode (native)
 
-One 1GB Droplet runs everything: the Node app, Caddy (TLS + reverse proxy), and
-nightly SQLite backups. SQLite files live on the Droplet's disk via a Docker
-volume.
+Syncart runs **natively** on a small Linode: `systemd` runs the Node server,
+Caddy terminates TLS/reverse-proxies, and a cron takes nightly SQLite backups.
+No Docker needed — the app has zero runtime npm dependencies (`node:sqlite` is
+built into Node).
 
-## 1. Create the Droplet
+The `Dockerfile` + `docker-compose.yml` in this repo remain as an alternative
+path if you ever want containers, but the Linode is set up native.
 
-- DigitalOcean → Droplets → **Ubuntu 24.04**, **Basic / 1GB / 25GB** (~$6/mo).
-- Add your SSH key so you can log in.
+## 1. Provision the Linode
 
-## 2. Point DNS at the Droplet
+- A `g6-nanode-1gb` (1 vCPU / 1GB / 25GB, ~$5/mo) is plenty.
+- Add your SSH key. Boot Ubuntu LTS.
 
-In your DNS provider (DigitalOcean DNS or wherever the domain lives), create two
-**A records** pointing at the Droplet's public IP:
-
-```
-example.com     A  <droplet-ip>
-*.example.com   A  <droplet-ip>
-```
-
-The wildcard is what makes `home.example.com`, `james.example.com`, etc. all
-work. If the domain is hosted in DO's DNS panel, Caddy will be able to manage
-certificates for it too.
-
-## 3. Create a DigitalOcean API token
-
-Caddy needs a token to prove ownership of `*.example.com` (the Let's Encrypt
-DNS-01 challenge). In the DO dashboard: **API → Tokens → Generate New Token**,
-scope it to **DNS** only, and copy it.
-
-## 4. Install Docker on the Droplet
+## 2. First-boot config (already done on this box)
 
 ```bash
-ssh root@<droplet-ip>
-curl -fsSL https://get.docker.com | sh
+# as root:
+useradd -m -s /bin/bash deploy
+echo 'deploy ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/90-syncart-deploy
+chmod 440 /etc/sudoers.d/90-syncart-deploy
+# install deploy's ~/.ssh/authorized_keys, then:
+apt update && apt full-upgrade -y
+apt install -y nodejs npm caddy        # or node via nodesource for a pinned version
+hostnamectl set-hostname syncart
 ```
 
-## 5. Get the code on the box
+Verify `node -v` ≥ 22 (needs built-in `node:sqlite`) and `caddy version`.
+
+## 3. App + systemd service
 
 ```bash
-git clone git@github.com:jameslaydigital/groceries.git /opt/groceries
-cd /opt/groceries
+sudo mkdir -p /opt/syncart && sudo chown deploy:deploy /opt/syncart
+# copy the repo (rsync from your machine, or git clone)
+cd /opt/syncart && npm ci && npm run build
 ```
 
-## 6. Configure and launch
+`/etc/systemd/system/syncart.service`:
+
+```ini
+[Unit]
+Description=Syncart grocery list server
+After=network.target
+
+[Service]
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/syncart
+Environment=NODE_ENV=production
+Environment=PORT=8787
+Environment=BASE_DOMAIN=yourdomain.com
+Environment=COOKIE_DOMAIN=.yourdomain.com
+Environment=COOKIE_SECURE=1
+# Before DNS is wired up, a bare host/IP maps to the default family:
+Environment=DEFAULT_HOSTS=23.239.29.165
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+```
 
 ```bash
-cd deploy
-cp .env.example .env
-$EDITOR .env          # BASE_DOMAIN, ACME_EMAIL, DIGITALOCEAN_API_TOKEN
-docker compose up -d --build
+sudo systemctl enable --now syncart
 ```
 
-Caddy will fetch a wildcard certificate automatically on first request (takes a
-minute). Watch it with `docker compose logs -f caddy`.
-
-## 7. First login & data
-
-The first visitor to `home.example.com` can sign up and becomes admin — or
-provision a known account and sample data from the container:
+## 4. Firewall
 
 ```bash
-docker compose exec app node scripts/setup.mjs
-docker compose exec app node scripts/create-family.mjs create james "The James Family"
+sudo ufw allow OpenSSH
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw --force enable
 ```
 
-## 8. Backups & maintenance
+Keep `8787` closed — only Caddy talks to it.
 
-- The `backup` service snapshots all databases into the persistent volume every
-  24h, keeping the newest 30 (set `KEEP_BACKUPS` to change).
-- Manual snapshot: `docker compose exec app npm run backup`.
-- Restore: copy a `families/*.db` + `platform.db` out of the volume
-  (`docker compose cp` or `docker run` a shell on it) and replace the live ones
-  with the app stopped.
+## 5. Caddy
 
-## Notes & gotchas
+### Before a domain exists (interim)
 
-- **Do not scale `app` to more than one replica.** The SSE broadcast is
-  in-memory (one process). If you ever need multiple instances, add pub/sub
-  (Redis) first.
-- `COOKIE_SECURE=1` is already set — sessions are `Secure`/`HttpOnly`/`SameSite=Lax`.
-- Upgrade: `git pull && docker compose up -d --build`. The service-worker cache
-  name is versioned per build, so clients pick up changes without stale caches.
-- Droplet disk is ephemeral across a rebuild — keep a `.env` backup and run the
-  `npm run backup` snapshots somewhere off-box if you care about disaster
-  recovery.
+Serve plain HTTP on port 80 so you can use the box by IP:
+
+```
+:80 {
+	reverse_proxy 127.0.0.1:8787
+}
+```
+
+Also set `DEFAULT_HOSTS=<your-ip>` so the IP resolves to the default `home`
+family. Leave `COOKIE_SECURE` off until TLS is on (browsers reject Secure
+cookies over HTTP).
+
+### Once you have a domain
+
+1. Point DNS at the box: `yourdomain.com` A `→ <ip>` and `*.yourdomain.com` A `→ <ip>` (Linode DNS panel).
+2. Generate a Linode API token with **DNS** scope — Caddy needs it to mint the wildcard cert via DNS-01.
+3. Caddy's stock binary lacks DNS providers, so build one with the Linode module
+   (either on the box with Go, or locally) and replace `/usr/bin/caddy`:
+
+   ```bash
+   xcaddy build --with github.com/caddy-dns/linode
+   ```
+
+4. Replace the Caddyfile with `deploy/Caddyfile` (uses `{$BASE_DOMAIN}` and
+   `{$DIGITALOCEAN_API_TOKEN}`/`{$LINODE_API_TOKEN}` env vars — adjust the DNS
+   module name if needed), and `systemctl reload caddy`.
+5. Enable `COOKIE_SECURE=1` + `COOKIE_DOMAIN=.yourdomain.com` in the service and restart.
+
+## 6. Backups
+
+```bash
+# in /etc/cron.d/syncart
+0 3 * * * deploy cd /opt/syncart && BACKUP_DIR=/opt/syncart/backups KEEP_BACKUPS=30 npm run backup --silent
+```
+
+`npm run backup` snapshots `platform.db` + every family DB via `VACUUM INTO`,
+retaining the newest `KEEP_BACKUPS`. Manually: `npm run backup`.
+
+## 7. Day-to-day
+
+- **Deploy an update:** `git pull && npm ci && npm run build && sudo systemctl restart syncart`
+- **Provision a family:** `node scripts/create-family.mjs create james "The James Family"`
+- **Known test login:** `node scripts/setup.mjs` (creates/resets `dev@example.com` / `devpassword` on the default family).
+
+## Notes
+
+- **Single instance only.** The SSE broadcast is in-memory; don't run multiple
+  replicas without adding pub/sub.
+- After enabling TLS, force clients to HTTPS by removing the `:80` plain site
+  from Caddy.
