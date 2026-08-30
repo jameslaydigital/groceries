@@ -2,11 +2,8 @@
 
 Syncart runs **natively** on a small Linode: `systemd` runs the Node server,
 Caddy terminates TLS/reverse-proxies, and a cron takes nightly SQLite backups.
-No Docker needed — the app has zero runtime npm dependencies (`node:sqlite` is
+No containers — the app has zero runtime npm dependencies (`node:sqlite` is
 built into Node).
-
-The `Dockerfile` + `docker-compose.yml` in this repo remain as an alternative
-path if you ever want containers, but the Linode is set up native.
 
 ## 1. Provision the Linode
 
@@ -104,9 +101,9 @@ cookies over HTTP).
    xcaddy build --with github.com/caddy-dns/linode
    ```
 
-4. Replace the Caddyfile with `deploy/Caddyfile` (uses `{$BASE_DOMAIN}` and
-   `{$DIGITALOCEAN_API_TOKEN}`/`{$LINODE_API_TOKEN}` env vars — adjust the DNS
-   module name if needed), and `systemctl reload caddy`.
+4. Replace the Caddyfile with `deploy/Caddyfile` (uses `{$BASE_DOMAIN}`,
+   `{$ACME_EMAIL}`, and `{$LINODE_API_TOKEN}` env vars), and
+   `systemctl reload caddy`.
 5. Enable `COOKIE_SECURE=1` + `COOKIE_DOMAIN=.yourdomain.com` in the service and restart.
 
 ## 6. Backups

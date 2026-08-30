@@ -1,19 +1,22 @@
+# TLS Caddyfile for production. Env vars come from the caddy systemd unit
+# (BASE_DOMAIN, ACME_EMAIL, LINODE_API_TOKEN). Requires a Caddy built with
+# the Linode DNS module:  xcaddy build --with github.com/caddy-dns/linode
+# The wildcard cert is issued via DNS-01 so any *.yourdomain.com works.
+
 {
 	email {$ACME_EMAIL}
 	admin off
 }
 
-# Shared handler: API and the SSE stream go to the app; static assets too
-# (the Node server serves dist/ itself, so everything proxies to one place).
 (app) {
 	@api path /rpc /events
 	handle @api {
-		reverse_proxy app:8787 {
+		reverse_proxy 127.0.0.1:8787 {
 			flush_interval -1
 		}
 	}
 	handle {
-		reverse_proxy app:8787
+		reverse_proxy 127.0.0.1:8787
 	}
 }
 
@@ -25,7 +28,7 @@
 # Every subdomain → one family
 *.{$BASE_DOMAIN} {
 	tls {
-		dns digitalocean {$DIGITALOCEAN_API_TOKEN}
+		dns linode {$LINODE_API_TOKEN}
 	}
 	import app
 }
