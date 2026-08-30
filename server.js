@@ -385,6 +385,78 @@ const listItems = (db) =>
     ORDER BY c.sort_order, i.checked, LOWER(i.name)
   `)
 
+function snapshotOf(db) {
+  return { categories: listCategories(db).all(), items: listItems(db).all() }
+}
+
+/* ------------------------------------------------------------------ */
+/* Realtime (Server-Sent Events)                                       */
+/* ------------------------------------------------------------------ */
+
+const sseClients = new Map() // subdomain -> Set<Response>
+
+const HEARTBEAT_MS = 25000
+
+function broadcastToFamily(subdomain, payload) {
+  const clients = sseClients.get(subdomain)
+  if (!clients || clients.size === 0) return
+  const frame = `event: snapshot\ndata: ${JSON.stringify(payload)}\n\n`
+  for (const res of clients) {
+    try {
+      res.write(frame)
+    } catch {
+      /* client is gone; the close handler will clean it up */
+    }
+  }
+}
+
+function handleEvents(req, res) {
+  let ctx
+  try {
+    ctx = buildCtx(req)
+    ctx.host = req.headers?.host
+    ctx.headers = req.headers
+    ctx.cookies = []
+  } catch (err) {
+    return send(res, 404, { ok: false, error: { code: err.code || 'NO_FAMILY', message: err.message } })
+  }
+  if (!ctx.user) {
+    return send(res, 401, { ok: false, error: { code: 'AUTH_REQUIRED', message: 'Log in to continue' } })
+  }
+  if (!ctx.role) {
+    return send(res, 403, { ok: false, error: { code: 'FORBIDDEN', message: "You're not a member of this family" } })
+  }
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  })
+  res.write(`event: hello\ndata: ${JSON.stringify({ family: ctx.family.name, role: ctx.role })}\n\n`)
+
+  let clients = sseClients.get(ctx.family.subdomain)
+  if (!clients) {
+    clients = new Set()
+    sseClients.set(ctx.family.subdomain, clients)
+  }
+  clients.add(res)
+
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(': ping\n\n')
+    } catch {
+      /* ignore */
+    }
+  }, HEARTBEAT_MS)
+
+  req.on('close', () => {
+    clearInterval(heartbeat)
+    clients.delete(res)
+    if (clients.size === 0) sseClients.delete(ctx.family.subdomain)
+  })
+}
+
 const getItem = (db) => db.prepare('SELECT * FROM items WHERE id = ?')
 const addItemStmt = (db) =>
   db.prepare(
@@ -427,6 +499,20 @@ const methods = {
       throw Object.assign(new Error('Display name is too long'), { code: 'INVALID_ARGS' })
     }
 
+    const existingUser = platform.prepare('SELECT * FROM users WHERE email = ?').get(normalized)
+    const alreadyMember =
+      existingUser &&
+      platform.prepare('SELECT * FROM memberships WHERE user_id = ? AND family_id = ?').get(existingUser.id, ctx.family.id)
+
+    // Existing member "signing up" on a family they belong to is a login.
+    if (alreadyMember) {
+      if (!verifyPassword(password, existingUser.password_hash)) {
+        throw Object.assign(new Error('Incorrect password'), { code: 'AUTH_FAILED' })
+      }
+      issueSession(existingUser.id, ctx)
+      return authResult(existingUser, ctx.family.subdomain)
+    }
+
     // Who gets to join? First user of an empty family becomes admin;
     // everyone else needs an invite from an admin.
     let role = 'member'
@@ -445,26 +531,19 @@ const methods = {
       platform.prepare('DELETE FROM invites WHERE id = ?').run(invite.id)
     }
 
-    let user = platform.prepare('SELECT * FROM users WHERE email = ?').get(normalized)
-    if (user) {
-      if (!verifyPassword(password, user.password_hash)) {
-        throw Object.assign(new Error('Incorrect password'), { code: 'AUTH_FAILED' })
-      }
-    } else {
+    let user = existingUser
+    if (!user) {
       const info = platform
         .prepare('INSERT INTO users (email, password_hash, display_name) VALUES (?, ?, ?)')
         .run(normalized, hashPassword(password), name?.trim() || null)
       user = { id: info.lastInsertRowid, email: normalized, display_name: name?.trim() || null }
+    } else if (!verifyPassword(password, user.password_hash)) {
+      throw Object.assign(new Error('Incorrect password'), { code: 'AUTH_FAILED' })
     }
 
-    const existing = platform
-      .prepare('SELECT * FROM memberships WHERE user_id = ? AND family_id = ?')
-      .get(user.id, ctx.family.id)
-    if (!existing) {
-      platform
-        .prepare('INSERT INTO memberships (user_id, family_id, role) VALUES (?, ?, ?)')
-        .run(user.id, ctx.family.id, role)
-    }
+    platform
+      .prepare('INSERT INTO memberships (user_id, family_id, role) VALUES (?, ?, ?)')
+      .run(user.id, ctx.family.id, role)
 
     issueSession(user.id, ctx)
     return authResult(user, ctx.family.subdomain)
@@ -521,10 +600,7 @@ const methods = {
   },
 
   snapshot(ctx) {
-    return {
-      categories: listCategories(ctx.db).all(),
-      items: listItems(ctx.db).all(),
-    }
+    return snapshotOf(ctx.db)
   },
 
   addItem(ctx, { name, quantity, category }) {
@@ -635,6 +711,7 @@ async function serveStatic(req, res, pathname) {
 }
 
 const PUBLIC_METHODS = new Set(['ping', 'meta', 'auth.signup', 'auth.login', 'auth.logout'])
+const MUTATING_METHODS = new Set(['addItem', 'updateItem', 'setChecked', 'deleteItem', 'clearChecked'])
 
 async function handleRpc(req, res) {
   let body = ''
@@ -679,6 +756,9 @@ async function handleRpc(req, res) {
 
   try {
     const result = await handler(ctx, ...(Array.isArray(params) ? params : [params]))
+    if (MUTATING_METHODS.has(method)) {
+      broadcastToFamily(ctx.family.subdomain, snapshotOf(ctx.db))
+    }
     send(res, 200, { ok: true, result }, ctx)
   } catch (err) {
     const status =
@@ -715,6 +795,10 @@ export function createApp() {
 
       if (pathname === '/rpc' || pathname === '/rpc/') {
         return await handleRpc(req, res)
+      }
+
+      if (pathname === '/events') {
+        return handleEvents(req, res)
       }
 
       return await serveStatic(req, res, pathname)

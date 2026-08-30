@@ -29,6 +29,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/rpc': 'http://localhost:8787',
+      '/events': 'http://localhost:8787',
     },
   },
 })

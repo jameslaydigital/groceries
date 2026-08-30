@@ -174,8 +174,13 @@ export async function addItem({ name, quantity, category }) {
 
   try {
     const saved = await rpc('addItem', { name, quantity, category })
-    const idx = data.items.findIndex((i) => i.id === pending.id)
-    if (idx !== -1) data.items[idx] = { ...saved, category_icon: categoryIcon(saved.category) }
+    // Idempotent reconciliation: a live snapshot may have already inserted
+    // the saved item, so remove the pending temp row and only add the real
+    // one if it isn't present yet.
+    data.items = data.items.filter((i) => i.id !== pending.id)
+    if (!data.items.some((i) => i.id === saved.id)) {
+      data.items.push({ ...saved, category_icon: categoryIcon(saved.category) })
+    }
     sortItems()
     markDirty()
     await rpc('snapshot').then(refresh).catch(() => {})
@@ -190,10 +195,18 @@ export async function addItem({ name, quantity, category }) {
   }
 }
 
-async function refresh(snap) {
+export function refresh(snap) {
   if (!snap) return
   data.categories = snap.categories
+  const pending = data.items.filter((i) => i.id < 0)
+  const key = (i) => `${i.name}|${i.category}|${i.quantity}`.toLowerCase()
+  const snapshotKeys = new Set(snap.items.map(key))
+  // Keep items added while offline (negative temp ids) visible until they're
+  // reconciled — but drop any pending item the snapshot already contains so a
+  // live update mid-add can't leave a duplicate behind.
+  const keepPending = pending.filter((p) => !snapshotKeys.has(key(p)))
   data.items = snap.items.map((i) => ({ ...i, category_icon: i.category_icon ?? categoryIcon(i.category) }))
+  if (keepPending.length) data.items.push(...keepPending)
   sortItems()
   markDirty()
 }

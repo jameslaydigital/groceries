@@ -39,7 +39,7 @@ The current `server.js` opened a single `groceries.db` at startup and every RPC 
 
 ---
 
-## Phase 2 — Realtime updates
+## Phase 2 — Realtime updates ✅ done
 
 Wife adds "Whole Milk"; husband sees it before she's put her phone down.
 

@@ -5,6 +5,7 @@
   import AddSheet from './components/AddSheet.svelte'
   import AuthScreen from './components/AuthScreen.svelte'
   import { data, ui, load, clearChecked, toast, family, user, auth, logout } from './lib/store.svelte.js'
+  import { connectRealtime, disconnectRealtime } from './lib/realtime.js'
   import rpc from './lib/rpc.js'
 
   let showSheet = $state(false)
@@ -55,6 +56,11 @@
   )
 
   let deferred
+
+  $effect(() => {
+    if (auth.status === 'authed') connectRealtime()
+    else disconnectRealtime()
+  })
 
   onMount(() => {
     load()

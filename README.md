@@ -37,6 +37,7 @@ await rpc('setChecked', id, true)
 
 - **Client:** `src/lib/rpc.js` — `rpc(method, ...params)`, plus an offline queue (mutations are persisted in `localStorage` and replayed when back online).
 - **Server:** `server.js` — the method dispatcher (`methods` map) backed by SQLite. Each request resolves its family from the `Host` header, opens that family's tenant database, and passes a `ctx = { db, family, user, families }` to the handler.
+- **Realtime:** after every successful mutation the server broadcasts the fresh snapshot over **SSE** (`/events`) to that family's connected clients; `src/lib/realtime.js` pipes those frames straight into the store, so changes on one device appear instantly on others.
 
 ### Methods
 
@@ -85,6 +86,7 @@ npm test
 Runs the `node:test` suite (no deps).
 - `test/tenant.test.mjs` locks down the tenant-selection security boundary: Host-header parsing (case, ports, IPv6, trailing dots, crafted aliases), unknown/empty/missing hosts, tenant data isolation, and hostile Host headers that must never create files outside `families/` or leave a request hanging.
 - `test/auth.test.mjs` covers the auth flow: bootstrap mode, first-user-becomes-admin, scrypt hashing, invite-gated signup, admin-only invites, login/logout, session cookies, and the 401/403 guards.
+- `test/realtime.test.mjs` covers SSE: auth guard on the stream, snapshot broadcasts to other members, and cross-family isolation (no leak between tenants).
 
 ## Notes
 
