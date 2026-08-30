@@ -11,6 +11,7 @@ const DATA_DIR = mkdtempSync(join(tmpdir(), 'groceries-tenant-test-'))
 process.env.DATA_DIR = DATA_DIR
 process.env.PLATFORM_DB = join(DATA_DIR, 'platform.db')
 process.env.SKIP_LEGACY_ADOPTION = '1'
+process.env.BASE_DOMAIN = 'example.com'
 
 const {
   tenantKeyFromHost,
@@ -114,6 +115,15 @@ describe('tenantKeyFromHost', () => {
     assert.equal(tenantKeyFromHost('127.0.0.1:8787'), DEFAULT_SUBDOMAIN)
     assert.equal(tenantKeyFromHost('lvh.me'), DEFAULT_SUBDOMAIN)
     assert.equal(tenantKeyFromHost('lvh.me:8787'), DEFAULT_SUBDOMAIN)
+  })
+
+  it('handles a production BASE_DOMAIN', () => {
+    assert.equal(tenantKeyFromHost('home.example.com'), DEFAULT_SUBDOMAIN)
+    assert.equal(tenantKeyFromHost('james.example.com'), 'james')
+    assert.equal(tenantKeyFromHost('example.com'), DEFAULT_SUBDOMAIN)
+    // crafted aliases must not alias into a real tenant under the base domain
+    assert.notEqual(tenantKeyFromHost('eviljames.example.com'), 'james')
+    assert.notEqual(tenantKeyFromHost('james.example.com.evil.net'), 'james')
   })
 
   it('maps IPv6 loopback literals to the default tenant', () => {

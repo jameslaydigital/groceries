@@ -1,0 +1,31 @@
+{
+	email {$ACME_EMAIL}
+	admin off
+}
+
+# Shared handler: API and the SSE stream go to the app; static assets too
+# (the Node server serves dist/ itself, so everything proxies to one place).
+(app) {
+	@api path /rpc /events
+	handle @api {
+		reverse_proxy app:8787 {
+			flush_interval -1
+		}
+	}
+	handle {
+		reverse_proxy app:8787
+	}
+}
+
+# Apex → default family (home)
+{$BASE_DOMAIN} {
+	import app
+}
+
+# Every subdomain → one family
+*.{$BASE_DOMAIN} {
+	tls {
+		dns digitalocean {$DIGITALOCEAN_API_TOKEN}
+	}
+	import app
+}

@@ -33,3 +33,5 @@ families/
 
 # Database backups
 backups/
+
+deploy/.env

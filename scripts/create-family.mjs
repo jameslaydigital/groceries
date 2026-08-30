@@ -29,5 +29,8 @@ if (existing) {
 }
 
 const info = platform.prepare('INSERT INTO families (subdomain, name) VALUES (?, ?)').run(key, name)
-console.log(`✅ Created family "${name}" (${key}) — visit http://${key}.lvh.me:${process.env.PORT || 8787}`)
+const base = process.env.BASE_DOMAIN || 'lvh.me'
+const port = process.env.BASE_DOMAIN ? '' : `:${process.env.PORT || 8787}`
+const scheme = process.env.BASE_DOMAIN ? 'https' : 'http'
+console.log(`✅ Created family "${name}" (${key}) — visit ${scheme}://${key}.${base}${port}`)
 console.log(`   Tenant database will be created on first visit (families/${key}.db)`)

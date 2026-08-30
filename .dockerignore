@@ -1,0 +1,14 @@
+node_modules
+dist
+families
+backups
+platform.db
+platform.db-wal
+platform.db-shm
+groceries.db
+groceries.db-wal
+groceries.db-shm
+.git
+test
+*.log
+deploy
