@@ -241,6 +241,32 @@ const SESSION_COOKIE = 'groceries.session'
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
 const PASSWORD_MIN = 8
 
+/* Brute-force protection: sliding-window counters per IP and per email. */
+const RATE_WINDOW_MS = 15 * 60 * 1000
+const RATE_MAX = Number(process.env.AUTH_RATE_MAX) || 5
+const rateBuckets = new Map() // key -> { count, resetAt }
+
+function bumpLimit(key) {
+  const now = Date.now()
+  let b = rateBuckets.get(key)
+  if (!b || b.resetAt < now) {
+    b = { count: 0, resetAt: now + RATE_WINDOW_MS }
+    rateBuckets.set(key, b)
+  }
+  b.count++
+}
+
+function assertNotLimited(key) {
+  const b = rateBuckets.get(key)
+  if (b && b.resetAt >= Date.now() && b.count >= RATE_MAX) {
+    throw Object.assign(new Error('Too many attempts — try again in a few minutes.'), { code: 'RATE_LIMITED' })
+  }
+}
+
+function clearLimit(key) {
+  rateBuckets.delete(key)
+}
+
 function hashPassword(password) {
   const salt = randomBytes(16)
   const hash = scryptSync(password, salt, 64)
@@ -536,6 +562,8 @@ const methods = {
 
   'auth.signup'(ctx, { email, password, name }) {
     const normalized = normalizeEmail(email)
+    const ipKey = 'ip:' + ctx.ip
+    const emailKey = 'email:' + normalized
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
       throw Object.assign(new Error('Enter a valid email address'), { code: 'INVALID_ARGS' })
     }
@@ -554,8 +582,12 @@ const methods = {
     // Existing member "signing up" on a family they belong to is a login.
     if (alreadyMember) {
       if (!verifyPassword(password, existingUser.password_hash)) {
+        bumpLimit(ipKey)
+        bumpLimit(emailKey)
         throw Object.assign(new Error('Incorrect password'), { code: 'AUTH_FAILED' })
       }
+      clearLimit(ipKey)
+      clearLimit(emailKey)
       issueSession(existingUser.id, ctx)
       return authResult(existingUser, ctx.family.subdomain)
     }
@@ -570,6 +602,7 @@ const methods = {
         .prepare('SELECT id FROM invites WHERE family_id = ? AND LOWER(email) = ?')
         .get(ctx.family.id, normalized)
       if (!invite) {
+        bumpLimit(ipKey)
         throw Object.assign(
           new Error('This family is private — ask an admin to invite you.'),
           { code: 'FORBIDDEN' }
@@ -585,6 +618,8 @@ const methods = {
         .run(normalized, hashPassword(password), name?.trim() || null)
       user = { id: info.lastInsertRowid, email: normalized, display_name: name?.trim() || null }
     } else if (!verifyPassword(password, user.password_hash)) {
+      bumpLimit(ipKey)
+      bumpLimit(emailKey)
       throw Object.assign(new Error('Incorrect password'), { code: 'AUTH_FAILED' })
     }
 
@@ -592,14 +627,23 @@ const methods = {
       .prepare('INSERT INTO memberships (user_id, family_id, role) VALUES (?, ?, ?)')
       .run(user.id, ctx.family.id, role)
 
+    clearLimit(ipKey)
+    clearLimit(emailKey)
     issueSession(user.id, ctx)
     return authResult(user, ctx.family.subdomain)
   },
 
   'auth.login'(ctx, { email, password }) {
     const normalized = normalizeEmail(email)
+    const ipKey = 'ip:' + ctx.ip
+    const emailKey = 'email:' + normalized
+    assertNotLimited(ipKey)
+    assertNotLimited(emailKey)
+
     const user = platform.prepare('SELECT * FROM users WHERE email = ?').get(normalized)
     if (!user || !verifyPassword(password, user.password_hash)) {
+      bumpLimit(ipKey)
+      bumpLimit(emailKey)
       throw Object.assign(new Error('Incorrect email or password'), { code: 'AUTH_FAILED' })
     }
     const membership = platform
@@ -608,6 +652,8 @@ const methods = {
     if (!membership) {
       throw Object.assign(new Error("You're not a member of this family"), { code: 'FORBIDDEN' })
     }
+    clearLimit(ipKey)
+    clearLimit(emailKey)
     issueSession(user.id, ctx)
     return authResult(user, ctx.family.subdomain)
   },
@@ -814,6 +860,7 @@ async function handleRpc(req, res) {
     ctx.host = req.headers?.host
     ctx.headers = req.headers
     ctx.cookies = []
+    ctx.ip = (req.headers['x-forwarded-for']?.split(',')[0] || req.socket?.remoteAddress || '').trim()
   } catch (err) {
     return send(res, 404, { ok: false, error: { code: err.code || 'NO_FAMILY', message: err.message } })
   }
@@ -840,7 +887,17 @@ async function handleRpc(req, res) {
     send(res, 200, { ok: true, result }, ctx)
   } catch (err) {
     const status =
-      err.code === 'NOT_FOUND' ? 404 : err.code === 'INVALID_ARGS' ? 400 : err.code === 'FORBIDDEN' ? 403 : err.code === 'AUTH_FAILED' ? 401 : 500
+      err.code === 'NOT_FOUND'
+        ? 404
+        : err.code === 'INVALID_ARGS'
+          ? 400
+          : err.code === 'FORBIDDEN'
+            ? 403
+            : err.code === 'AUTH_FAILED'
+              ? 401
+              : err.code === 'RATE_LIMITED'
+                ? 429
+                : 500
     send(res, status, { ok: false, error: { code: err.code || 'INTERNAL', message: err.message } }, ctx)
   }
 }

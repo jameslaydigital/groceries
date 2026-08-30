@@ -30,3 +30,6 @@ dist-ssr
 
 # Per-family tenant databases
 families/
+
+# Database backups
+backups/

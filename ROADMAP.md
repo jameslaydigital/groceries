@@ -64,12 +64,14 @@ Shop by store — Costco / Trader Joe's / Smith's.
 
 ---
 
-## Phase 4 — Production hardening
+## Phase 4 — Production hardening (mostly done)
 
-- **HTTPS** — required for the PWA (service workers + `Secure` cookies). Real domain + subdomains replace lvh.me.
-- Cookie hardening (per-subdomain sessions + signed switch token), rate-limiting on auth, brute-force backoff.
-- WAL backups, schema migrations tooling, and automated tests (the RPC layer makes this easy to test end-to-end).
-- Performance: keep tenant DBs tiny; revisit caching if the per-tenant file count grows.
+- ✅ **Brute-force protection** — sliding-window rate limiting on login/signup (per IP and per email, `AUTH_RATE_MAX` attempts per 15 min, cleared on success, `429` when throttled).
+- ✅ **Backups** — `npm run backup` snapshots `platform.db` + every tenant DB via `VACUUM INTO` into timestamped `backups/` dirs.
+- ✅ **Session hardening** — only a sha256 hash of the session token is stored; sessions expire after 30 days and are rejected when expired.
+- ✅ **Cookie flags** — `HttpOnly`, `SameSite=Lax`; `Secure` when `COOKIE_SECURE=1`.
+- ⏳ **Deployment** — real domain + subdomains and HTTPS (required for the PWA + `Secure` cookies). Run with `COOKIE_SECURE=1` behind TLS. Optionally swap the in-memory SSE broadcast for pub/sub if scaling to multiple processes.
+- ⏳ **Hardening option** — per-subdomain sessions with a short-lived signed switch token (instead of the parent-domain cookie) if the threat model ever warrants it.
 
 ---
 

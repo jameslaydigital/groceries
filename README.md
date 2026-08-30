@@ -9,6 +9,7 @@ npm install
 npm run dev          # Vite dev server on :5173, proxies /rpc to the backend
 npm run build        # production build into dist/
 npm start            # serves dist/ + the RPC API on :8787
+npm run backup       # snapshot platform.db + every family DB into backups/
 ```
 
 The server is multi-tenant. Each **family** gets its own SQLite file (`families/<subdomain>.db`) and you pick which family you're looking at by subdomain:
@@ -92,6 +93,7 @@ Runs the `node:test` suite (no deps).
 - `test/auth.test.mjs` covers the auth flow: bootstrap mode, first-user-becomes-admin, scrypt hashing, invite-gated signup, admin-only invites, login/logout, session cookies, and the 401/403 guards.
 - `test/realtime.test.mjs` covers SSE: auth guard on the stream, snapshot broadcasts to other members, and cross-family isolation (no leak between tenants).
 - `test/tags.test.mjs` covers store tagging: seeded tags, tagging items on create/update, custom tags, and snapshot shape.
+- `test/hardening.test.mjs` covers brute-force rate limiting (per-IP + per-email lockout, `429`), hashed session-token storage, and expired-session rejection.
 
 ## Notes
 
