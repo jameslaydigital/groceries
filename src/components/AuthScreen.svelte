@@ -53,8 +53,8 @@
 
   <div class="card">
     <div class="brand">
-      <span class="logo">🥬</span>
-      <h1>Groceries</h1>
+      <span class="logo">🧺</span>
+      <h1>Syncart</h1>
       <p class="family">{family.name || 'Your family'}</p>
     </div>
 

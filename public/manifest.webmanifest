@@ -1,7 +1,7 @@
 {
-  "name": "Groceries",
-  "short_name": "Groceries",
-  "description": "A beautiful, fast grocery list that works offline.",
+  "name": "Syncart",
+  "short_name": "Syncart",
+  "description": "The shared grocery list that stays in sync between you and your family.",
   "id": "/",
   "start_url": "/",
   "scope": "/",

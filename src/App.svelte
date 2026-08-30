@@ -142,7 +142,7 @@
     <header>
       <div class="titles">
         <h1>
-          <span class="leaf">🥬</span> Groceries
+          <span class="leaf">🧺</span> Syncart
         </h1>
         <p>{subtitle}</p>
       </div>

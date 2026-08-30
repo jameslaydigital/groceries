@@ -963,7 +963,7 @@ export {
 
 if (import.meta.main) {
   createApp().listen(PORT, () => {
-    console.log(`🍎 groceries server running → http://localhost:${PORT}`)
+    console.log(`🛒 syncart server running → http://localhost:${PORT}`)
     console.log(`   families: {subdomain}.lvh.me:${PORT}  (default: ${DEFAULT_SUBDOMAIN})`)
   })
 }

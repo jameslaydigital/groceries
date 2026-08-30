@@ -1,6 +1,6 @@
-# 🥬 Groceries
+# 🧺 Syncart
 
-A visually stunning, mobile-first grocery list PWA. Built with **Svelte 5 + Vite** on the front and **Node + SQLite (`node:sqlite`)** on the back, communicating over a thin JSON-RPC layer.
+A visually stunning, mobile-first grocery list PWA for families. Built with **Svelte 5 + Vite** on the front and **Node + SQLite (`node:sqlite`)** on the back, communicating over a thin JSON-RPC layer. Changes sync instantly between devices over SSE.
 
 ## Run it
 

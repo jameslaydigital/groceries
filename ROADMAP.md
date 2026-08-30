@@ -1,4 +1,4 @@
-# Roadmap
+# Syncart — Roadmap
 
 A grocery list PWA for a family. Mobile-first, offline-capable, installable. Backend is Node + `node:sqlite`; frontend is Svelte 5 + Vite; the two communicate over a JSON-RPC layer (`rpc('method', ...args)`).
 
