@@ -6,6 +6,7 @@
   let name = $state('')
   let quantity = $state('1')
   let category = $state('Produce')
+  let selectedTags = $state([])
   let editingId = $state(null)
   let suggestions = $state([])
   let busy = $state(false)
@@ -13,6 +14,7 @@
   let chips
 
   let categories = $derived(data.categories)
+  let tags = $derived(data.tags)
 
   $effect(() => {
     if (ui.editing) {
@@ -20,6 +22,7 @@
       name = ui.editing.name
       quantity = ui.editing.quantity
       category = ui.editing.category
+      selectedTags = ui.editing.tag_ids ?? []
       suggestions = []
     }
   })
@@ -29,6 +32,7 @@
       name = ''
       quantity = '1'
       category = 'Produce'
+      selectedTags = []
     }
   })
 
@@ -66,16 +70,25 @@
     suggestions = []
   }
 
+  function toggleTag(id) {
+    selectedTags = selectedTags.includes(id) ? selectedTags.filter((t) => t !== id) : [...selectedTags, id]
+  }
+
   async function submit() {
     const n = name.trim()
     if (!n || busy) return
     busy = true
     if (editingId) {
-      await updateItem(editingId, { name: n, quantity: quantity.trim() || '1', category })
+      await updateItem(editingId, {
+        name: n,
+        quantity: quantity.trim() || '1',
+        category,
+        tag_ids: selectedTags,
+      })
       ui.editing = null
       open = false
     } else {
-      await addItem({ name: n, quantity: quantity.trim() || '1', category })
+      await addItem({ name: n, quantity: quantity.trim() || '1', category, tag_ids: selectedTags })
       name = ''
       quantity = '1'
       input?.focus()
@@ -144,6 +157,19 @@
           {/each}
         </div>
       </div>
+
+      {#if tags.length}
+        <div class="field">
+          <span class="label">Stores</span>
+          <div class="tag-row">
+            {#each tags as t (t.id)}
+              <button class:active={selectedTags.includes(t.id)} onclick={() => toggleTag(t.id)}>
+                <span>{t.icon}</span> {t.name}
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
 
       <button class="submit" class:busy onclick={submit} disabled={!name.trim() || busy}>
         {#if busy}
@@ -272,6 +298,35 @@
     color: var(--ink);
     text-align: center;
     line-height: 1.1;
+  }
+  .tag-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .tag-row button {
+    border: 1.5px solid var(--input-border);
+    background: var(--input-bg);
+    color: var(--ink);
+    border-radius: 999px;
+    padding: 9px 14px;
+    font-size: 14px;
+    font-weight: 700;
+    font-family: inherit;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: all 0.18s;
+  }
+  .tag-row button.active {
+    border-color: var(--accent);
+    background: var(--accent-tint);
+    color: var(--accent);
+    box-shadow: 0 0 0 4px var(--focus-ring);
+  }
+  .tag-row button:active {
+    transform: scale(0.95);
   }
   .suggestions {
     display: flex;

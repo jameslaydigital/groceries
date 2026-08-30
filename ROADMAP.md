@@ -50,7 +50,7 @@ Wife adds "Whole Milk"; husband sees it before she's put her phone down.
 
 ---
 
-## Phase 3 — Store tagging
+## Phase 3 — Store tagging ✅ done
 
 Shop by store — Costco / Trader Joe's / Smith's.
 

@@ -1,7 +1,9 @@
 <script>
-  import { toggleItem, removeItem, ui } from '../lib/store.svelte.js'
+  import { toggleItem, removeItem, ui, tagsById } from '../lib/store.svelte.js'
 
   let { item } = $props()
+  let tagMap = $derived(tagsById())
+  let badges = $derived((item.tag_ids ?? []).map((id) => tagMap.get(id)).filter(Boolean).slice(0, 2))
 
   let startX = 0
   let dragging = $state(false)
@@ -68,6 +70,13 @@
         <span class="name">{item.name}</span>
         <span class="qty" class:done={item.checked}>{item.quantity}</span>
       </div>
+      {#if badges.length}
+        <span class="badges" aria-label="Stores">
+          {#each badges as b (b.id)}
+            <span class="badge" title={b.name}>{b.icon}</span>
+          {/each}
+        </span>
+      {/if}
     </div>
   </div>
 </div>
@@ -191,6 +200,21 @@
     font-weight: 600;
     color: var(--accent-soft);
     transition: color 0.25s;
+  }
+  .badges {
+    display: inline-flex;
+    gap: 3px;
+    margin-left: auto;
+    flex: none;
+  }
+  .badge {
+    width: 24px;
+    height: 24px;
+    border-radius: 8px;
+    background: var(--chip-bg);
+    display: grid;
+    place-items: center;
+    font-size: 13px;
   }
   .row.done {
     opacity: 0.72;

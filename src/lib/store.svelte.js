@@ -2,7 +2,7 @@ import rpc from './rpc.js'
 
 const STATE_KEY = 'groceries.state.v1'
 
-export const data = $state({ categories: [], items: [] })
+export const data = $state({ categories: [], items: [], tags: [] })
 export const family = $state({ name: '', subdomain: '' })
 export const user = $state({ id: null, email: '', display_name: '', role: null, families: [] })
 export const auth = $state({ status: 'loading' }) // loading | anon | authed
@@ -12,6 +12,7 @@ export const ui = $state({
   editing: null,
   search: '',
   activeCategory: 'All',
+  activeTag: null,
   toast: null,
 })
 
@@ -74,12 +75,13 @@ function markDirty() {
 
 export async function load() {
   try {
-    const local = readLocal()
-    if (local) {
-      data.categories = local.categories
-      data.items = local.items.map((i) => ({ ...i, category_icon: i.category_icon ?? categoryIcon(i.category) }))
-      ui.ready = true
-    }
+  const local = readLocal()
+  if (local) {
+    data.categories = local.categories ?? []
+    data.tags = local.tags ?? []
+    data.items = (local.items ?? []).map((i) => ({ ...i, category_icon: i.category_icon ?? categoryIcon(i.category), tag_ids: i.tag_ids ?? [] }))
+    ui.ready = true
+  }
   } catch {
     /* no local state */
   }
@@ -158,7 +160,7 @@ function sortItems() {
   })
 }
 
-export async function addItem({ name, quantity, category }) {
+export async function addItem({ name, quantity, category, tag_ids }) {
   const pending = {
     id: -Date.now(),
     name,
@@ -166,6 +168,7 @@ export async function addItem({ name, quantity, category }) {
     category,
     checked: 0,
     category_icon: categoryIcon(category),
+    tag_ids: tag_ids ?? [],
   }
   data.items.unshift(pending)
   sortItems()
@@ -173,13 +176,13 @@ export async function addItem({ name, quantity, category }) {
   markDirty()
 
   try {
-    const saved = await rpc('addItem', { name, quantity, category })
+    const saved = await rpc('addItem', { name, quantity, category, tag_ids: tag_ids ?? [] })
     // Idempotent reconciliation: a live snapshot may have already inserted
     // the saved item, so remove the pending temp row and only add the real
     // one if it isn't present yet.
     data.items = data.items.filter((i) => i.id !== pending.id)
     if (!data.items.some((i) => i.id === saved.id)) {
-      data.items.push({ ...saved, category_icon: categoryIcon(saved.category) })
+      data.items.push({ ...saved, category_icon: categoryIcon(saved.category), tag_ids: saved.tag_ids ?? [] })
     }
     sortItems()
     markDirty()
@@ -198,6 +201,7 @@ export async function addItem({ name, quantity, category }) {
 export function refresh(snap) {
   if (!snap) return
   data.categories = snap.categories
+  data.tags = snap.tags ?? []
   const pending = data.items.filter((i) => i.id < 0)
   const key = (i) => `${i.name}|${i.category}|${i.quantity}`.toLowerCase()
   const snapshotKeys = new Set(snap.items.map(key))
@@ -205,7 +209,11 @@ export function refresh(snap) {
   // reconciled — but drop any pending item the snapshot already contains so a
   // live update mid-add can't leave a duplicate behind.
   const keepPending = pending.filter((p) => !snapshotKeys.has(key(p)))
-  data.items = snap.items.map((i) => ({ ...i, category_icon: i.category_icon ?? categoryIcon(i.category) }))
+  data.items = snap.items.map((i) => ({
+    ...i,
+    category_icon: i.category_icon ?? categoryIcon(i.category),
+    tag_ids: i.tag_ids ?? [],
+  }))
   if (keepPending.length) data.items.push(...keepPending)
   sortItems()
   markDirty()
@@ -236,7 +244,7 @@ export async function updateItem(id, patch) {
   try {
     const saved = await rpc('updateItem', id, patch)
     const idx = data.items.findIndex((i) => i.id === id)
-    if (idx !== -1) data.items[idx] = { ...saved, category_icon: categoryIcon(saved.category) }
+    if (idx !== -1) data.items[idx] = { ...saved, category_icon: categoryIcon(saved.category), tag_ids: saved.tag_ids ?? [] }
     sortItems()
     markDirty()
     rpc('snapshot').then(refresh).catch(() => {})
@@ -285,4 +293,8 @@ export async function clearChecked() {
 
 export function categoryIcon(name) {
   return data.categories.find((c) => c.name === name)?.icon ?? '🛒'
+}
+
+export function tagsById() {
+  return new Map(data.tags.map((t) => [t.id, t]))
 }

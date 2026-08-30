@@ -21,14 +21,16 @@
   let total = $derived(items.length)
   let done = $derived(items.filter((i) => i.checked).length)
   let pending = $derived(total - done)
+  let activeTag = $derived(data.tags.find((t) => t.id === ui.activeTag) ?? null)
 
   let filtered = $derived.by(() => {
     const q = ui.search.trim().toLowerCase()
     return items.filter((i) => {
       const inCat = ui.activeCategory === 'All' || i.category === ui.activeCategory
+      const inTag = !ui.activeTag || (i.tag_ids ?? []).includes(ui.activeTag)
       const inSearch =
         !q || i.name.toLowerCase().includes(q) || i.quantity.toLowerCase().includes(q) || i.category.toLowerCase().includes(q)
-      return inCat && inSearch
+      return inCat && inTag && inSearch
     })
   })
 
@@ -201,6 +203,28 @@
         </button>
       {/each}
     </div>
+
+    {#if data.tags.length}
+      <div class="chips tags">
+        {#each data.tags as t (t.id)}
+          <button
+            class="chip"
+            class:active={ui.activeTag === t.id}
+            onclick={() => (ui.activeTag = ui.activeTag === t.id ? null : t.id)}
+          >
+            <span>{t.icon}</span> {t.name}
+          </button>
+        {/each}
+      </div>
+    {/if}
+
+    {#if activeTag}
+      <div class="shopping-banner">
+        <span class="shop-icon">{activeTag.icon}</span>
+        Shopping at {activeTag.name}
+        <button class="clear-tag" onclick={() => (ui.activeTag = null)} aria-label="Clear store filter">✕</button>
+      </div>
+    {/if}
 
     {#if checkedCount > 0}
       <button class="clear-checked" onclick={clearChecked}>
@@ -527,6 +551,36 @@
   }
   .chip:active {
     transform: scale(0.94);
+  }
+
+  .shopping-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--accent-gradient);
+    color: #fff;
+    border-radius: 14px;
+    padding: 11px 14px;
+    font-size: 14px;
+    font-weight: 800;
+    box-shadow: 0 8px 20px var(--accent-glow);
+    animation: fade-down 0.3s ease both;
+  }
+  .shop-icon {
+    font-size: 17px;
+  }
+  .clear-tag {
+    margin-left: auto;
+    border: 0;
+    background: rgba(255, 255, 255, 0.22);
+    color: #fff;
+    width: 24px;
+    height: 24px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 11px;
+    display: grid;
+    place-items: center;
   }
 
   .clear-checked {

@@ -125,6 +125,18 @@ const TENANT_MIGRATIONS = [
    );
    CREATE INDEX IF NOT EXISTS idx_items_category ON items(category);
    CREATE INDEX IF NOT EXISTS idx_items_checked ON items(checked);`,
+  `CREATE TABLE IF NOT EXISTS tags (
+     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+     name       TEXT NOT NULL UNIQUE,
+     icon       TEXT NOT NULL DEFAULT '🏷️',
+     sort_order INTEGER NOT NULL DEFAULT 0
+   );
+   CREATE TABLE IF NOT EXISTS item_tags (
+     item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+     tag_id  INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+     PRIMARY KEY (item_id, tag_id)
+   );
+   CREATE INDEX IF NOT EXISTS idx_item_tags_tag ON item_tags(tag_id);`,
 ]
 
 const DEFAULT_CATEGORIES = [
@@ -138,6 +150,12 @@ const DEFAULT_CATEGORIES = [
   ['Beverages', '🥤', 8],
   ['Household', '🧼', 9],
   ['Other', '🛒', 99],
+]
+
+const DEFAULT_TAGS = [
+  ['Costco', '🛒', 1],
+  ["Trader Joe's", '🥑', 2],
+  ["Smith's", '🏬', 3],
 ]
 
 function migrateTenant(db) {
@@ -159,6 +177,12 @@ function migrateTenant(db) {
   if (n === 0) {
     const ins = db.prepare('INSERT INTO categories (name, icon, sort_order) VALUES (?, ?, ?)')
     for (const c of DEFAULT_CATEGORIES) ins.run(...c)
+  }
+
+  const { t } = db.prepare('SELECT COUNT(*) AS t FROM tags').get()
+  if (t === 0) {
+    const ins = db.prepare('INSERT INTO tags (name, icon, sort_order) VALUES (?, ?, ?)')
+    for (const tag of DEFAULT_TAGS) ins.run(...tag)
   }
 }
 
@@ -385,8 +409,31 @@ const listItems = (db) =>
     ORDER BY c.sort_order, i.checked, LOWER(i.name)
   `)
 
+const listTags = (db) => db.prepare('SELECT id, name, icon, sort_order FROM tags ORDER BY sort_order, name')
+
+function withTagIds(db, items) {
+  const rows = db.prepare('SELECT item_id, tag_id FROM item_tags').all()
+  const map = new Map()
+  for (const { item_id, tag_id } of rows) {
+    if (!map.has(item_id)) map.set(item_id, [])
+    map.get(item_id).push(tag_id)
+  }
+  return items.map((i) => ({ ...i, tag_ids: map.get(i.id) ?? [] }))
+}
+
+function replaceItemTags(db, itemId, tagIds) {
+  db.prepare('DELETE FROM item_tags WHERE item_id = ?').run(itemId)
+  for (const tagId of tagIds) {
+    db.prepare('INSERT OR IGNORE INTO item_tags (item_id, tag_id) VALUES (?, ?)').run(itemId, tagId)
+  }
+}
+
 function snapshotOf(db) {
-  return { categories: listCategories(db).all(), items: listItems(db).all() }
+  return {
+    categories: listCategories(db).all(),
+    tags: listTags(db).all(),
+    items: withTagIds(db, listItems(db).all()),
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -596,14 +643,38 @@ const methods = {
   },
 
   listItems(ctx) {
-    return listItems(ctx.db).all()
+    return withTagIds(ctx.db, listItems(ctx.db).all())
+  },
+
+  listTags(ctx) {
+    return listTags(ctx.db).all()
+  },
+
+  addTag(ctx, { name, icon }) {
+    const db = ctx.db
+    const n = String(name ?? '').trim()
+    if (!n) throw Object.assign(new Error('Tag name is required'), { code: 'INVALID_ARGS' })
+    const existing = db.prepare('SELECT * FROM tags WHERE name = ?').get(n)
+    if (existing) return existing
+    const order = db.prepare('SELECT COALESCE(MAX(sort_order) + 1, 99) AS n FROM tags').get().n
+    const info = db.prepare('INSERT INTO tags (name, icon, sort_order) VALUES (?, ?, ?)').run(n, String(icon ?? '🏷️').trim() || '🏷️', order)
+    return db.prepare('SELECT * FROM tags WHERE id = ?').get(info.lastInsertRowid)
+  },
+
+  setItemTags(ctx, id, tagIds = []) {
+    const db = ctx.db
+    const existing = getItem(db).get(id)
+    if (!existing) throw Object.assign(new Error('Item not found'), { code: 'NOT_FOUND' })
+    const clean = Array.from(new Set((Array.isArray(tagIds) ? tagIds : []).map(Number).filter(Number.isInteger)))
+    replaceItemTags(db, id, clean)
+    return withTagIds(db, [getItem(db).get(id)])[0]
   },
 
   snapshot(ctx) {
     return snapshotOf(ctx.db)
   },
 
-  addItem(ctx, { name, quantity, category }) {
+  addItem(ctx, { name, quantity, category, tag_ids }) {
     const db = ctx.db
     const n = String(name ?? '').trim()
     if (!n) throw Object.assign(new Error('Name is required'), { code: 'INVALID_ARGS' })
@@ -615,7 +686,11 @@ const methods = {
     }
 
     const info = addItemStmt(db).run(n, qty, cat)
-    return getItem(db).get(info.lastInsertRowid)
+    const id = info.lastInsertRowid
+    if (Array.isArray(tag_ids) && tag_ids.length) {
+      replaceItemTags(db, id, Array.from(new Set(tag_ids.map(Number).filter(Number.isInteger))))
+    }
+    return withTagIds(db, [getItem(db).get(id)])[0]
   },
 
   updateItem(ctx, id, patch = {}) {
@@ -635,7 +710,10 @@ const methods = {
     const checked = patch.checked !== undefined ? (patch.checked ? 1 : 0) : undefined
 
     updateItemStmt(db).run(name ?? null, quantity ?? null, category ?? null, checked ?? null, id)
-    return getItem(db).get(id)
+    if (Array.isArray(patch.tag_ids)) {
+      replaceItemTags(db, id, Array.from(new Set(patch.tag_ids.map(Number).filter(Number.isInteger))))
+    }
+    return withTagIds(db, [getItem(db).get(id)])[0]
   },
 
   setChecked(ctx, id, checked) {
@@ -711,7 +789,7 @@ async function serveStatic(req, res, pathname) {
 }
 
 const PUBLIC_METHODS = new Set(['ping', 'meta', 'auth.signup', 'auth.login', 'auth.logout'])
-const MUTATING_METHODS = new Set(['addItem', 'updateItem', 'setChecked', 'deleteItem', 'clearChecked'])
+const MUTATING_METHODS = new Set(['addItem', 'updateItem', 'setChecked', 'deleteItem', 'clearChecked', 'addTag', 'setItemTags'])
 
 async function handleRpc(req, res) {
   let body = ''
