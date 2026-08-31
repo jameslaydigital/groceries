@@ -60,9 +60,11 @@
 
     <div class="tabs" role="tablist">
       <button class:active={mode === 'login'} class="tab" onclick={() => switchMode('login')}>Log in</button>
-      <button class:active={mode === 'signup'} class="tab" onclick={() => switchMode('signup')}>
-        {#if family.name}Join this family{:else}Create a family{/if}
-      </button>
+      {#if family.bootstrap}
+        <button class:active={mode === 'signup'} class="tab" onclick={() => switchMode('signup')}>
+          Create a family
+        </button>
+      {/if}
     </div>
 
     <form onsubmit={(e) => { e.preventDefault(); submit() }}>
@@ -103,11 +105,11 @@
 
     <p class="hint">
       {#if mode === 'login'}
-        New here? Ask an admin to invite you — or be the first to claim this family.
+        {family.bootstrap
+          ? 'New here? Be the first to claim this family.'
+          : 'This family is private — ask an admin to send you an invite link.'}
       {:else}
-        {family.name
-          ? 'Signing up uses the invite an admin sent you.'
-          : 'The first person to claim this family becomes its admin.'}
+        The first person to claim this family becomes its admin.
       {/if}
     </p>
   </div>
