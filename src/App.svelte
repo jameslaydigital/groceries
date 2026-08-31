@@ -3,12 +3,21 @@
   import ProgressRing from './components/ProgressRing.svelte'
   import ItemRow from './components/ItemRow.svelte'
   import AddSheet from './components/AddSheet.svelte'
+  import MembersPanel from './components/MembersPanel.svelte'
   import AuthScreen from './components/AuthScreen.svelte'
+  import InviteScreen from './components/InviteScreen.svelte'
   import { data, ui, load, clearChecked, toast, family, user, auth, logout } from './lib/store.svelte.js'
   import { connectRealtime, disconnectRealtime } from './lib/realtime.js'
   import rpc from './lib/rpc.js'
 
   let showSheet = $state(false)
+  let showMembers = $state(false)
+  let inviteToken = $state('')
+
+  onMount(() => {
+    const m = /^\/invite\/accept\/([^/]+)/.exec(window.location.pathname)
+    if (m) inviteToken = decodeURIComponent(m[1])
+  })
   let installPrompt = $state(null)
   let installed = $state(false)
   let conn = $state({ offline: false, pending: 0 })
@@ -118,7 +127,9 @@
   }
 </script>
 
-{#if auth.status === 'anon'}
+{#if inviteToken && auth.status !== 'authed'}
+  <InviteScreen token={inviteToken} />
+{:else if auth.status === 'anon'}
   <AuthScreen />
 {:else}
   <main class="app">
@@ -130,6 +141,7 @@
 
   <div class="sheet-anchor">
     <AddSheet bind:open={showSheet} />
+    <MembersPanel bind:open={showMembers} />
 
     {#if conn.offline}
       <div class="offline-banner">
@@ -159,6 +171,13 @@
           {/if}
         {/if}
         {#if user.id}
+          <button class="logout" onclick={() => (showMembers = true)} aria-label="Members" title="Members">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+          </button>
           <button class="logout" onclick={logout} aria-label="Log out" title="Log out">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />

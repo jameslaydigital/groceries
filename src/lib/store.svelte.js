@@ -3,8 +3,9 @@ import rpc from './rpc.js'
 const STATE_KEY = 'groceries.state.v1'
 
 export const data = $state({ categories: [], items: [], tags: [] })
-export const family = $state({ name: '', subdomain: '' })
+export const family = $state({ name: '', subdomain: '', bootstrap: false })
 export const user = $state({ id: null, email: '', display_name: '', role: null, families: [] })
+export const members = $state({ list: [], invites: [], loaded: false })
 export const auth = $state({ status: 'loading' }) // loading | anon | authed
 export const ui = $state({
   ready: false,
@@ -29,6 +30,7 @@ function persistAuth(status) {
 export function applyMeta(m) {
   family.name = m.family?.name ?? ''
   family.subdomain = m.family?.subdomain ?? ''
+  family.bootstrap = !!m.bootstrap
   user.id = m.user?.id ?? null
   user.email = m.user?.email ?? ''
   user.display_name = m.user?.display_name ?? ''
@@ -123,8 +125,8 @@ export async function login(email, password) {
   await load()
 }
 
-export async function signup(email, password, name) {
-  const m = await rpc('auth.signup', { email, password, name })
+export async function signup(email, password, name, token) {
+  const m = await rpc('auth.signup', { email, password, name, ...(token ? { token } : {}) })
   applyMeta(m)
   toast(m.role === 'admin' ? 'Family created — you’re the admin!' : 'Welcome to the family!', '🎉')
   await load()
@@ -146,7 +148,22 @@ export async function logout() {
 }
 
 export async function invite(email) {
-  return rpc('auth.invite', { email })
+  const res = await rpc('auth.invite', { email })
+  await listMembers().catch(() => {})
+  return res
+}
+
+export async function listMembers() {
+  const res = await rpc('listMembers')
+  members.list = res.members ?? []
+  members.invites = res.invites ?? []
+  members.loaded = true
+  return res
+}
+
+export async function revokeInvite(id) {
+  await rpc('revokeInvite', { id })
+  members.invites = members.invites.filter((i) => i.id !== id)
 }
 
 function sortItems() {
