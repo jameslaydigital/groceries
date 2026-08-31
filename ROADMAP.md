@@ -32,8 +32,8 @@ The current `server.js` opened a single `groceries.db` at startup and every RPC 
 - Passwords hashed with `crypto.scrypt` (built-in, no new deps).
 - Sessions: random 256-bit tokens in a `sessions` table; delivered as **httpOnly, `SameSite=Lax`** cookies.
 - Cookie domain = parent domain (`.lvh.me` in dev) so a multi-family user switches families smoothly; the **membership check is the real security boundary** (the token only ever grants access to families the user belongs to). *Hardening option: scope the cookie per-subdomain and hop via a short-lived signed switch token — noted in Phase 4.*
-- Onboarding: first user of an empty family becomes **admin**; admins invite others by email/link.
-- RPC: `auth.signup`, `auth.login`, `auth.logout`, `auth.invite`, and `meta` reports `{ user, role, families }`.
+- Onboarding: first user of an empty family becomes **admin**; admins invite others via secure one-time links (`/invite/accept/<token>`, 256-bit tokens, single-use, revocable).
+- RPC: `auth.signup` (takes an invite `token` for private families), `auth.login`, `auth.logout`, `auth.invite` (returns a token), `auth.inviteInfo`, `revokeInvite`, `listMembers`, and `meta` reports `{ user, role, families, bootstrap }`.
 - Guard middleware rejects every other RPC method when there's no valid session + membership for the current family (401 / 403).
 - Families with no members are "bootstrap mode" (open) until the first person signs up.
 

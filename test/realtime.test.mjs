@@ -101,8 +101,8 @@ function openSSE(host, cookie) {
   })
 }
 
-async function signup(host, email, password) {
-  const res = await rpc(host, 'auth.signup', [{ email, password, name: 'T' }])
+async function signup(host, email, password, token) {
+  const res = await rpc(host, 'auth.signup', [{ email, password, name: 'T', ...(token ? { token } : {}) }])
   return cookieFrom(res.setCookie)
 }
 
@@ -128,8 +128,8 @@ describe('realtime broadcast', () => {
   it('pushes a snapshot to other members after a mutation', async () => {
     // admin + invited member on the same family
     const adminCookie = await signup('home.lvh.me', 'a@example.com', 'hunter2secret')
-    await rpc('home.lvh.me', 'auth.invite', [{ email: 'b@example.com' }], { cookie: adminCookie })
-    const memberCookie = await signup('home.lvh.me', 'b@example.com', 'hunter2secret')
+    const invite = await rpc('home.lvh.me', 'auth.invite', [{ email: 'b@example.com' }], { cookie: adminCookie })
+    const memberCookie = await signup('home.lvh.me', 'b@example.com', 'hunter2secret', invite.json.result.token)
 
     const sse = await openSSE('home.lvh.me', memberCookie)
     await sse.waitFor(/event: hello/)
@@ -147,8 +147,8 @@ describe('realtime broadcast', () => {
   it('does not leak snapshots across families', async () => {
     // a@example.com is already the home admin (re-signup logs back in)
     const adminCookie = await signup('home.lvh.me', 'a@example.com', 'hunter2secret')
-    await rpc('home.lvh.me', 'auth.invite', [{ email: 'c@example.com' }], { cookie: adminCookie })
-    const carolCookie = await signup('home.lvh.me', 'c@example.com', 'hunter2secret')
+    const invite = await rpc('home.lvh.me', 'auth.invite', [{ email: 'c@example.com' }], { cookie: adminCookie })
+    const carolCookie = await signup('home.lvh.me', 'c@example.com', 'hunter2secret', invite.json.result.token)
 
     const sse = await openSSE('home.lvh.me', carolCookie)
     await sse.waitFor(/event: hello/)

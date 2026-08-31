@@ -68,6 +68,9 @@ const PLATFORM_MIGRATIONS = [
      created_at TEXT NOT NULL DEFAULT (datetime('now')),
      UNIQUE (family_id, email)
    );`,
+  `ALTER TABLE invites ADD COLUMN token TEXT;
+   UPDATE invites SET token = hex(randomblob(32)) WHERE token IS NULL;
+   CREATE UNIQUE INDEX IF NOT EXISTS idx_invites_token ON invites(token);`,
 ]
 
 function migratePlatform(db) {
@@ -569,7 +572,7 @@ const methods = {
     }
   },
 
-  'auth.signup'(ctx, { email, password, name }) {
+  'auth.signup'(ctx, { email, password, name, token }) {
     const normalized = normalizeEmail(email)
     const ipKey = 'ip:' + ctx.ip
     const emailKey = 'email:' + normalized
@@ -586,10 +589,38 @@ const methods = {
     assertNotThrottled(ipKey)
     assertNotThrottled(emailKey)
 
+    // A valid invite token names the target family. Without one, the
+    // current (host) family is the target.
+    let role = 'member'
+    let targetFamilyId = ctx.family.id
+    let sessionSubdomain = ctx.family.subdomain
+    let inviteId = null
+    if (token && typeof token === 'string') {
+      const invite = platform
+        .prepare(
+          `SELECT i.id, i.family_id, i.role, f.subdomain
+           FROM invites i
+           JOIN families f ON f.id = i.family_id
+           WHERE i.token = ?`
+        )
+        .get(token)
+      if (!invite) {
+        markFailure(ipKey)
+        throw Object.assign(
+          new Error('This invite is invalid or has already been used.'),
+          { code: 'FORBIDDEN' }
+        )
+      }
+      role = invite.role
+      targetFamilyId = invite.family_id
+      sessionSubdomain = invite.subdomain
+      inviteId = invite.id
+    }
+
     const existingUser = platform.prepare('SELECT * FROM users WHERE email = ?').get(normalized)
     const alreadyMember =
       existingUser &&
-      platform.prepare('SELECT * FROM memberships WHERE user_id = ? AND family_id = ?').get(existingUser.id, ctx.family.id)
+      platform.prepare('SELECT * FROM memberships WHERE user_id = ? AND family_id = ?').get(existingUser.id, targetFamilyId)
 
     // Existing member "signing up" on a family they belong to is a login.
     if (alreadyMember) {
@@ -600,28 +631,21 @@ const methods = {
       }
       clearThrottle(ipKey)
       clearThrottle(emailKey)
+      if (inviteId) platform.prepare('DELETE FROM invites WHERE id = ?').run(inviteId)
       issueSession(existingUser.id, ctx)
-      return authResult(existingUser, ctx.family.subdomain)
+      return authResult(existingUser, sessionSubdomain)
     }
 
-    // Who gets to join? First user of an empty family becomes admin;
-    // everyone else needs an invite from an admin.
-    let role = 'member'
-    if (ctx.bootstrap) {
-      role = 'admin'
-    } else {
-      const invite = platform
-        .prepare('SELECT id FROM invites WHERE family_id = ? AND LOWER(email) = ?')
-        .get(ctx.family.id, normalized)
-      if (!invite) {
-        markFailure(ipKey)
-        throw Object.assign(
-          new Error('This family is private — ask an admin to invite you.'),
-          { code: 'FORBIDDEN' }
-        )
-      }
-      platform.prepare('DELETE FROM invites WHERE id = ?').run(invite.id)
+    // Who else gets to join? The first user of an empty family claims it
+    // and becomes admin; everyone else must hold a valid invite link.
+    if (!token && !ctx.bootstrap) {
+      markFailure(ipKey)
+      throw Object.assign(
+        new Error('This family is private — ask an admin to send you an invite link.'),
+        { code: 'FORBIDDEN' }
+      )
     }
+    if (!token) role = 'admin'
 
     let user = existingUser
     if (!user) {
@@ -637,12 +661,13 @@ const methods = {
 
     platform
       .prepare('INSERT INTO memberships (user_id, family_id, role) VALUES (?, ?, ?)')
-      .run(user.id, ctx.family.id, role)
+      .run(user.id, targetFamilyId, role)
+    if (inviteId) platform.prepare('DELETE FROM invites WHERE id = ?').run(inviteId)
 
     clearThrottle(ipKey)
     clearThrottle(emailKey)
     issueSession(user.id, ctx)
-    return authResult(user, ctx.family.subdomain)
+    return authResult(user, sessionSubdomain)
   },
 
   'auth.login'(ctx, { email, password }) {
@@ -687,13 +712,64 @@ const methods = {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
       throw Object.assign(new Error('Enter a valid email address'), { code: 'INVALID_ARGS' })
     }
+    // Possession of the token is what grants access — re-inviting an email
+    // rotates the token so previously shared links stop working.
+    const token = randomBytes(32).toString('base64url')
     platform
       .prepare(
-        `INSERT INTO invites (family_id, email, role, created_by) VALUES (?, ?, 'member', ?)
-         ON CONFLICT (family_id, email) DO NOTHING`
+        `INSERT INTO invites (family_id, email, role, created_by, token) VALUES (?, ?, 'member', ?, ?)
+         ON CONFLICT (family_id, email) DO UPDATE SET token = excluded.token`
       )
-      .run(ctx.family.id, normalized, ctx.user.id)
-    return { invited: normalized }
+      .run(ctx.family.id, normalized, ctx.user.id, token)
+    return { invited: normalized, token }
+  },
+
+  'auth.inviteInfo'(ctx, { token }) {
+    if (typeof token !== 'string' || !token) {
+      throw Object.assign(new Error('Missing invite token'), { code: 'INVALID_ARGS' })
+    }
+    const invite = platform
+      .prepare(
+        `SELECT i.id, i.email, i.role, f.name AS family_name, f.subdomain
+         FROM invites i
+         JOIN families f ON f.id = i.family_id
+         WHERE i.token = ?`
+      )
+      .get(token)
+    if (!invite) return { valid: false }
+    return {
+      valid: true,
+      email: invite.email,
+      role: invite.role,
+      family: { name: invite.family_name, subdomain: invite.subdomain },
+    }
+  },
+
+  'revokeInvite'(ctx, { id }) {
+    if (ctx.role !== 'admin') {
+      throw Object.assign(new Error('Only admins can manage invites'), { code: 'FORBIDDEN' })
+    }
+    const info = platform.prepare('DELETE FROM invites WHERE id = ? AND family_id = ?').run(Number(id), ctx.family.id)
+    return { revoked: info.changes > 0 }
+  },
+
+  listMembers(ctx) {
+    const members = platform
+      .prepare(
+        `SELECT u.id, u.email, u.display_name, m.role
+         FROM memberships m
+         JOIN users u ON u.id = m.user_id
+         WHERE m.family_id = ?
+         ORDER BY m.role = 'admin' DESC, LOWER(COALESCE(u.display_name, u.email))`
+      )
+      .all(ctx.family.id)
+    const invites = platform
+      .prepare('SELECT id, email, token, created_at FROM invites WHERE family_id = ? ORDER BY created_at DESC')
+      .all(ctx.family.id)
+    // The token is the secret that lets someone in — only admins see it,
+    // so they can copy the invite link. Members just see who's pending.
+    if (ctx.role !== 'admin') for (const i of invites) delete i.token
+    return { members, invites }
   },
 
   listCategories(ctx) {
@@ -846,7 +922,7 @@ async function serveStatic(req, res, pathname) {
   }
 }
 
-const PUBLIC_METHODS = new Set(['ping', 'meta', 'auth.signup', 'auth.login', 'auth.logout'])
+const PUBLIC_METHODS = new Set(['ping', 'meta', 'auth.signup', 'auth.login', 'auth.logout', 'auth.inviteInfo'])
 const MUTATING_METHODS = new Set(['addItem', 'updateItem', 'setChecked', 'deleteItem', 'clearChecked', 'addTag', 'setItemTags'])
 
 async function handleRpc(req, res) {

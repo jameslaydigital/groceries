@@ -67,10 +67,13 @@ await rpc('setChecked', id, true)
 | Method          | Params                                 | Returns                              |
 | --------------- | -------------------------------------- | ------------------------------------ |
 | `meta`          | —                                      | `{ family, user, role, families }`   |
-| `auth.signup`   | `{ email, password, name? }`           | auth result + session cookie         |
+| `auth.signup`   | `{ email, password, name?, token? }`   | auth result + session cookie; `token` (invite link) required for private families |
 | `auth.login`    | `{ email, password }`                  | auth result + session cookie         |
 | `auth.logout`   | —                                      | clears the session cookie            |
-| `auth.invite`   | `{ email }`                            | admin-only, invites a member         |
+| `auth.invite`   | `{ email }`                            | admin-only; returns a one-time invite `token` |
+| `auth.inviteInfo`| `{ token }`                           | public; validates an invite link, returns `{ valid, family, email }` |
+| `revokeInvite`  | `{ id }`                               | admin-only, cancels a pending invite |
+| `listMembers`   | —                                      | `{ members, invites }` for this family |
 | `listTags`      | —                                      | all tags for this family             |
 | `addTag`        | `{ name, icon? }`                      | the created tag                      |
 | `setItemTags`   | `id, tagIds`                           | item with updated `tag_ids`          |
@@ -111,7 +114,7 @@ npm test
 
 Runs the `node:test` suite (no deps).
 - `test/tenant.test.mjs` locks down the tenant-selection security boundary: Host-header parsing (case, ports, IPv6, trailing dots, crafted aliases), unknown/empty/missing hosts, tenant data isolation, and hostile Host headers that must never create files outside `families/` or leave a request hanging.
-- `test/auth.test.mjs` covers the auth flow: bootstrap mode, first-user-becomes-admin, scrypt hashing, invite-gated signup, admin-only invites, login/logout, session cookies, and the 401/403 guards.
+- `test/auth.test.mjs` covers the auth flow: bootstrap mode, first-user-becomes-admin, scrypt hashing, token-based invite signup (`/invite/accept/<token>`), admin-only invites, login/logout, session cookies, and the 401/403 guards.
 - `test/realtime.test.mjs` covers SSE: auth guard on the stream, snapshot broadcasts to other members, and cross-family isolation (no leak between tenants).
 - `test/tags.test.mjs` covers store tagging: seeded tags, tagging items on create/update, custom tags, and snapshot shape.
 - `test/hardening.test.mjs` covers brute-force rate limiting (at most one failed attempt per second, per IP and per email, cleared on success), hashed session-token storage, and expired-session rejection.

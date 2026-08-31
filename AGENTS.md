@@ -47,8 +47,9 @@ Subdomains via `lvh.me` → e.g. `http://james.lvh.me:5173`.
     open until the first member signs up).
   - **Auth:** scrypt password hashes, httpOnly cookie (`groceries.session`),
     per-second rate limit on failed attempts (per IP + per email), cleared on
-    success. First user of an empty family becomes admin; later joins need an
-    invite.
+    success. First user of an empty family becomes admin; everyone else joins
+    via a one-time invite link (`/invite/accept/<token>`, 256-bit token,
+    single-use, revocable; re-inviting an email rotates the token).
   - **Realtime:** `GET /events` (SSE), authenticated, per-family in-memory
     broadcast set. After any mutation, the server pushes the fresh snapshot to
     that family's connected clients.

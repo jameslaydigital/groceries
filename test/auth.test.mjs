@@ -126,8 +126,11 @@ describe('auth.signup', () => {
     const admin = await rpc('home.lvh.me', 'auth.login', [{ email: 'jane@example.com', password: 'hunter2secret' }])
     const invite = await rpc('home.lvh.me', 'auth.invite', [{ email: 'bob@example.com' }], { cookie: cookieFrom(admin.setCookie) })
     assert.equal(invite.status, 200)
+    assert.ok(invite.json.result.token, 'invite includes a secure token')
 
-    const res = await rpc('home.lvh.me', 'auth.signup', [{ email: 'bob@example.com', password: 'hunter2secret' }])
+    const res = await rpc('home.lvh.me', 'auth.signup', [
+      { email: 'bob@example.com', password: 'hunter2secret', token: invite.json.result.token },
+    ])
     assert.equal(res.status, 200)
     assert.equal(res.json.result.role, 'member')
   })
@@ -203,6 +206,147 @@ describe('auth guard', () => {
     const res = await rpc('home.lvh.me', 'snapshot', [], { cookie: cookieFrom(login.setCookie) })
     assert.equal(res.status, 200)
     assert.equal(res.json.ok, true)
+  })
+})
+
+/* ---------------- members & invites ---------------- */
+
+describe('members & invites', () => {
+  let adminCookie
+  let memberCookie
+
+  before(async () => {
+    const admin = await rpc('home.lvh.me', 'auth.login', [{ email: 'jane@example.com', password: 'hunter2secret' }])
+    adminCookie = cookieFrom(admin.setCookie)
+    const member = await rpc('home.lvh.me', 'auth.login', [{ email: 'bob@example.com', password: 'hunter2secret' }])
+    memberCookie = cookieFrom(member.setCookie)
+  })
+
+  it('listMembers returns the roster plus pending invites', async () => {
+    const invited = await rpc('home.lvh.me', 'auth.invite', [{ email: 'dave@example.com' }], { cookie: adminCookie })
+    assert.equal(invited.status, 200)
+
+    const res = await rpc('home.lvh.me', 'listMembers', [], { cookie: adminCookie })
+    assert.equal(res.status, 200)
+    const { members, invites } = res.json.result
+    const emails = members.map((m) => m.email)
+    assert.ok(emails.includes('jane@example.com'))
+    assert.ok(emails.includes('bob@example.com'))
+    const admin = members.find((m) => m.email === 'jane@example.com')
+    assert.equal(admin.role, 'admin')
+    const invitedEmails = invites.map((i) => i.email)
+    assert.ok(invitedEmails.includes('dave@example.com'))
+  })
+
+  it('any member can list members; only admins can revoke invites', async () => {
+    const asMember = await rpc('home.lvh.me', 'listMembers', [], { cookie: memberCookie })
+    assert.equal(asMember.status, 200)
+    assert.ok(asMember.json.result.members.some((m) => m.email === 'jane@example.com'))
+
+    const invite = await rpc('home.lvh.me', 'listMembers', [], { cookie: adminCookie })
+    const target = invite.json.result.invites.find((i) => i.email === 'dave@example.com')
+
+    const blocked = await rpc('home.lvh.me', 'revokeInvite', [{ id: target.id }], { cookie: memberCookie })
+    assert.equal(blocked.status, 403)
+
+    const revoked = await rpc('home.lvh.me', 'revokeInvite', [{ id: target.id }], { cookie: adminCookie })
+    assert.equal(revoked.status, 200)
+    assert.equal(revoked.json.result.revoked, true)
+
+    const after = await rpc('home.lvh.me', 'listMembers', [], { cookie: adminCookie })
+    assert.ok(!after.json.result.invites.some((i) => i.email === 'dave@example.com'))
+  })
+
+  it('revoking a missing invite reports revoked:false', async () => {
+    const res = await rpc('home.lvh.me', 'revokeInvite', [{ id: 999999 }], { cookie: adminCookie })
+    assert.equal(res.status, 200)
+    assert.equal(res.json.result.revoked, false)
+  })
+})
+
+/* ---------------- invite links (token flow) ---------------- */
+
+describe('invite links', () => {
+  let adminCookie
+
+  before(async () => {
+    const admin = await rpc('home.lvh.me', 'auth.login', [{ email: 'jane@example.com', password: 'hunter2secret' }])
+    adminCookie = cookieFrom(admin.setCookie)
+  })
+
+  it('auth.inviteInfo resolves a valid token to the family', async () => {
+    const invite = await rpc('home.lvh.me', 'auth.invite', [{ email: 'erin@example.com' }], { cookie: adminCookie })
+    const res = await rpc('home.lvh.me', 'auth.inviteInfo', [{ token: invite.json.result.token }])
+    assert.equal(res.status, 200)
+    assert.equal(res.json.result.valid, true)
+    assert.equal(res.json.result.email, 'erin@example.com')
+    assert.equal(res.json.result.family.subdomain, 'home')
+  })
+
+  it('auth.inviteInfo is public and rejects bogus tokens', async () => {
+    const res = await rpc('home.lvh.me', 'auth.inviteInfo', [{ token: 'not-a-real-token' }])
+    assert.equal(res.status, 200)
+    assert.equal(res.json.result.valid, false)
+  })
+
+  it('signup with a token joins the family and consumes it', async () => {
+    const invite = await rpc('home.lvh.me', 'auth.invite', [{ email: 'erin@example.com' }], { cookie: adminCookie })
+    const token = invite.json.result.token
+    const res = await rpc('home.lvh.me', 'auth.signup', [
+      { email: 'erin@example.com', password: 'hunter2secret', token },
+    ])
+    assert.equal(res.status, 200)
+    assert.equal(res.json.result.role, 'member')
+
+    // the token is single-use
+    const again = await rpc('home.lvh.me', 'auth.signup', [
+      { email: 'erin@example.com', password: 'hunter2secret', token },
+    ])
+    assert.equal(again.status, 403)
+    assert.equal(again.json.error.code, 'FORBIDDEN')
+  })
+
+  it('a revoked invite no longer works', async () => {
+    const invite = await rpc('home.lvh.me', 'auth.invite', [{ email: 'frank@example.com' }], { cookie: adminCookie })
+    const listed = await rpc('home.lvh.me', 'listMembers', [], { cookie: adminCookie })
+    const row = listed.json.result.invites.find((i) => i.email === 'frank@example.com')
+    assert.ok(row.token, 'admins see invite tokens')
+    await rpc('home.lvh.me', 'revokeInvite', [{ id: row.id }], { cookie: adminCookie })
+
+    const res = await rpc('home.lvh.me', 'auth.signup', [
+      { email: 'frank@example.com', password: 'hunter2secret', token: invite.json.result.token },
+    ])
+    assert.equal(res.status, 403)
+    assert.equal(res.json.error.code, 'FORBIDDEN')
+  })
+
+  it('any email can use an invite link — the token is the gate', async () => {
+    const invite = await rpc('home.lvh.me', 'auth.invite', [{ email: 'grace@example.com' }], { cookie: adminCookie })
+    const res = await rpc('home.lvh.me', 'auth.signup', [
+      { email: 'notgrace@example.com', password: 'hunter2secret', token: invite.json.result.token },
+    ])
+    assert.equal(res.status, 200)
+    assert.equal(res.json.result.role, 'member')
+  })
+
+  it('re-inviting an email rotates its token', async () => {
+    const first = await rpc('home.lvh.me', 'auth.invite', [{ email: 'hank@example.com' }], { cookie: adminCookie })
+    const second = await rpc('home.lvh.me', 'auth.invite', [{ email: 'hank@example.com' }], { cookie: adminCookie })
+    assert.notEqual(first.json.result.token, second.json.result.token)
+
+    // the first link is dead
+    const old = await rpc('home.lvh.me', 'auth.signup', [
+      { email: 'hank@example.com', password: 'hunter2secret', token: first.json.result.token },
+    ])
+    assert.equal(old.status, 403)
+  })
+
+  it('listMembers hides invite tokens from non-admins', async () => {
+    const memberLogin = await rpc('home.lvh.me', 'auth.login', [{ email: 'bob@example.com', password: 'hunter2secret' }])
+    const res = await rpc('home.lvh.me', 'listMembers', [], { cookie: cookieFrom(memberLogin.setCookie) })
+    assert.equal(res.status, 200)
+    assert.ok(res.json.result.invites.length > 0)
+    for (const inv of res.json.result.invites) assert.ok(!('token' in inv))
   })
 })
 
