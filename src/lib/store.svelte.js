@@ -166,6 +166,14 @@ export async function revokeInvite(id) {
   members.invites = members.invites.filter((i) => i.id !== id)
 }
 
+export function generateResetLink(userId) {
+  return rpc('auth.resetPasswordLink', { userId })
+}
+
+export function resetPassword(token, password) {
+  return rpc('auth.resetPassword', { token, password })
+}
+
 function sortItems() {
   const order = new Map(data.categories.map((c) => [c.name, c.sort_order]))
   data.items.sort((a, b) => {

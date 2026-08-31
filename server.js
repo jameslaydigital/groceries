@@ -69,6 +69,15 @@ const PLATFORM_MIGRATIONS = [
   `ALTER TABLE invites ADD COLUMN token TEXT;
    UPDATE invites SET token = hex(randomblob(32)) WHERE token IS NULL;
    CREATE UNIQUE INDEX IF NOT EXISTS idx_invites_token ON invites(token);`,
+  `CREATE TABLE IF NOT EXISTS password_resets (
+     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     token      TEXT NOT NULL UNIQUE,
+     created_by INTEGER REFERENCES users(id),
+     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+     expires_at TEXT NOT NULL
+   );
+   CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id);`,
 ]
 
 function migratePlatform(db) {
@@ -251,6 +260,7 @@ class TenantError extends Error {
 
 const SESSION_COOKIE = 'groceries.session'
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
+const RESET_TTL_MS = 24 * 60 * 60 * 1000 // password reset links last a day
 const PASSWORD_MIN = 8
 
 /* Brute-force protection: at most one failed attempt per second per key,
@@ -291,6 +301,18 @@ function verifyPassword(password, stored) {
 }
 
 const sha256 = (s) => createHash('sha256').update(s).digest('hex')
+
+// Resolve an unexpired password-reset token, consuming expired ones.
+function validResetToken(token) {
+  if (typeof token !== 'string' || !token) return null
+  const row = platform.prepare('SELECT * FROM password_resets WHERE token = ?').get(token)
+  if (!row) return null
+  if (new Date(row.expires_at).getTime() <= Date.now()) {
+    platform.prepare('DELETE FROM password_resets WHERE id = ?').run(row.id)
+    return null
+  }
+  return row
+}
 
 function newSessionToken() {
   return randomBytes(32).toString('base64url')
@@ -740,6 +762,53 @@ const methods = {
     }
   },
 
+  'auth.resetPasswordLink'(ctx, { userId }) {
+    if (ctx.role !== 'admin') {
+      throw Object.assign(new Error('Only admins can reset passwords'), { code: 'FORBIDDEN' })
+    }
+    const member = platform
+      .prepare(
+        `SELECT u.id, u.email FROM users u
+         JOIN memberships m ON m.user_id = u.id
+         WHERE u.id = ? AND m.family_id = ?`
+      )
+      .get(Number(userId), ctx.family.id)
+    if (!member) {
+      throw Object.assign(new Error('No member with that id in this family'), { code: 'NOT_FOUND' })
+    }
+    // One active link per member — generating a new one kills the old.
+    const token = randomBytes(32).toString('base64url')
+    const expiresAt = new Date(Date.now() + RESET_TTL_MS).toISOString()
+    platform.prepare('DELETE FROM password_resets WHERE user_id = ?').run(member.id)
+    platform
+      .prepare('INSERT INTO password_resets (user_id, token, created_by, expires_at) VALUES (?, ?, ?, ?)')
+      .run(member.id, token, ctx.user.id, expiresAt)
+    return { token, email: member.email }
+  },
+
+  'auth.resetPasswordInfo'(ctx, { token }) {
+    const row = validResetToken(token)
+    if (!row) return { valid: false }
+    const { email } = platform.prepare('SELECT email FROM users WHERE id = ?').get(row.user_id)
+    return { valid: true, email }
+  },
+
+  'auth.resetPassword'(ctx, { token, password }) {
+    if (typeof password !== 'string' || password.length < PASSWORD_MIN) {
+      throw Object.assign(new Error(`Password must be at least ${PASSWORD_MIN} characters`), { code: 'INVALID_ARGS' })
+    }
+    const row = validResetToken(token)
+    if (!row) {
+      throw Object.assign(new Error('This reset link is invalid or has expired.'), { code: 'FORBIDDEN' })
+    }
+    platform.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(password), row.user_id)
+    platform.prepare('DELETE FROM password_resets WHERE id = ?').run(row.id)
+    // The old password is gone — every existing session must re-auth.
+    platform.prepare('DELETE FROM sessions WHERE user_id = ?').run(row.user_id)
+    const { email } = platform.prepare('SELECT email FROM users WHERE id = ?').get(row.user_id)
+    return { ok: true, email }
+  },
+
   'revokeInvite'(ctx, { id }) {
     if (ctx.role !== 'admin') {
       throw Object.assign(new Error('Only admins can manage invites'), { code: 'FORBIDDEN' })
@@ -917,7 +986,7 @@ async function serveStatic(req, res, pathname) {
   }
 }
 
-const PUBLIC_METHODS = new Set(['ping', 'meta', 'auth.signup', 'auth.login', 'auth.logout', 'auth.inviteInfo'])
+const PUBLIC_METHODS = new Set(['ping', 'meta', 'auth.signup', 'auth.login', 'auth.logout', 'auth.inviteInfo', 'auth.resetPasswordInfo', 'auth.resetPassword'])
 const MUTATING_METHODS = new Set(['addItem', 'updateItem', 'setChecked', 'deleteItem', 'clearChecked', 'addTag', 'setItemTags'])
 
 async function handleRpc(req, res) {

@@ -73,6 +73,9 @@ await rpc('setChecked', id, true)
 | `auth.invite`   | `{ email }`                            | admin-only; returns a one-time invite `token` |
 | `auth.inviteInfo`| `{ token }`                           | public; validates an invite link, returns `{ valid, family, email }` |
 | `revokeInvite`  | `{ id }`                               | admin-only, cancels a pending invite |
+| `auth.resetPasswordLink` | `{ userId }`                 | admin-only, mints a one-time password-reset link (24h) |
+| `auth.resetPasswordInfo` | `{ token }`                  | public; validates a reset link, returns `{ valid, email }` |
+| `auth.resetPassword` | `{ token, password }`            | public; sets a new password and kills old sessions |
 | `listMembers`   | —                                      | `{ members, invites }` for this family |
 | `listTags`      | —                                      | all tags for this family             |
 | `addTag`        | `{ name, icon? }`                      | the created tag                      |

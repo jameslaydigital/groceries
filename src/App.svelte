@@ -6,6 +6,7 @@
   import MembersPanel from './components/MembersPanel.svelte'
   import AuthScreen from './components/AuthScreen.svelte'
   import InviteScreen from './components/InviteScreen.svelte'
+  import ResetScreen from './components/ResetScreen.svelte'
   import { data, ui, load, clearChecked, toast, family, user, auth, logout } from './lib/store.svelte.js'
   import { connectRealtime, disconnectRealtime } from './lib/realtime.js'
   import rpc from './lib/rpc.js'
@@ -13,10 +14,13 @@
   let showSheet = $state(false)
   let showMembers = $state(false)
   let inviteToken = $state('')
+  let resetToken = $state('')
 
   onMount(() => {
     const m = /^\/invite\/accept\/([^/]+)/.exec(window.location.pathname)
     if (m) inviteToken = decodeURIComponent(m[1])
+    const r = /^\/reset\/([^/]+)/.exec(window.location.pathname)
+    if (r) resetToken = decodeURIComponent(r[1])
   })
   let installPrompt = $state(null)
   let installed = $state(false)
@@ -127,8 +131,12 @@
   }
 </script>
 
-{#if inviteToken && auth.status !== 'authed'}
-  <InviteScreen token={inviteToken} />
+{#if (inviteToken || resetToken) && auth.status !== 'authed'}
+  {#if inviteToken}
+    <InviteScreen token={inviteToken} />
+  {:else}
+    <ResetScreen token={resetToken} />
+  {/if}
 {:else if auth.status === 'anon'}
   <AuthScreen />
 {:else}

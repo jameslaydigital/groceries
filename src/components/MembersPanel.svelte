@@ -1,11 +1,14 @@
 <script>
-  import { members, user, family, invite, revokeInvite, listMembers, toast } from '../lib/store.svelte.js'
+  import { members, user, family, invite, revokeInvite, listMembers, generateResetLink, toast } from '../lib/store.svelte.js'
 
   let { open = $bindable(false) } = $props()
   let email = $state('')
   let error = $state('')
   let busy = $state(false)
   let copiedId = $state(null)
+  let resetFor = $state(null)
+  let resetBusy = $state(null)
+  let copiedReset = $state(false)
 
   const isAdmin = $derived(user.role === 'admin')
 
@@ -13,6 +16,7 @@
     if (open) {
       error = ''
       email = ''
+      resetFor = null
       listMembers().catch((e) => toast(e.message, '⚠️'))
     }
   })
@@ -69,6 +73,30 @@
       await navigator.clipboard.writeText(inviteLink(token))
       copiedId = token
       setTimeout(() => (copiedId = null), 1600)
+    } catch {
+      /* clipboard unavailable */
+    }
+  }
+
+  async function resetPw(member) {
+    if (resetBusy) return
+    resetBusy = member.id
+    try {
+      const { token, email } = await generateResetLink(member.id)
+      resetFor = { id: member.id, email, url: `${familyUrl}/reset/${token}` }
+      resetBusy = null
+    } catch (e) {
+      resetBusy = null
+      toast(e.message, '⚠️')
+    }
+  }
+
+  async function copyReset() {
+    if (!resetFor) return
+    try {
+      await navigator.clipboard.writeText(resetFor.url)
+      copiedReset = true
+      setTimeout(() => (copiedReset = false), 1600)
     } catch {
       /* clipboard unavailable */
     }
@@ -172,7 +200,28 @@
                   </span>
                   <span class="email">{m.email}</span>
                 </span>
+                {#if isAdmin}
+                  <button class="key" onclick={() => resetPw(m)} disabled={resetBusy !== null} aria-label={`Generate reset link for ${m.email}`} title="Reset password">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="7.5" cy="15.5" r="3.5" />
+                      <path d="M10 13 21 2M15.5 6.5l2.5 2.5M12 10l2 2" />
+                    </svg>
+                  </button>
+                {/if}
               </li>
+              {#if resetFor?.id === m.id}
+                <li class="reset-row">
+                  <span class="who">
+                    <span class="name">Reset link for {m.display_name || m.email}</span>
+                    <span class="email link-url">{resetFor.url}</span>
+                    <span class="email">Single-use, expires in 24h</span>
+                  </span>
+                  <button class="copy" onclick={copyReset} aria-label="Copy reset link">
+                    {copiedReset ? '✓' : 'Copy'}
+                  </button>
+                  <button class="revoke" onclick={() => (resetFor = null)} aria-label="Dismiss reset link">✕</button>
+                </li>
+              {/if}
             {/each}
           </ul>
         {/if}
@@ -417,6 +466,24 @@
   .copy:active {
     transform: scale(0.94);
   }
+  .key {
+    flex: none;
+    border: 0;
+    width: 26px;
+    height: 26px;
+    border-radius: 9px;
+    background: var(--chip-bg);
+    color: var(--muted);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+  }
+  .key:active:not(:disabled) {
+    transform: scale(0.9);
+  }
+  .key:disabled {
+    opacity: 0.5;
+  }
   .revoke {
     flex: none;
     border: 0;
@@ -432,6 +499,13 @@
   }
   .revoke:active {
     transform: scale(0.9);
+  }
+  .roster .reset-row {
+    border: 1.5px dashed var(--input-border);
+    background: var(--accent-tint);
+  }
+  .link-url {
+    word-break: break-all;
   }
 
   .spin {

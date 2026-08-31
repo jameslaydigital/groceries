@@ -350,6 +350,87 @@ describe('invite links', () => {
   })
 })
 
+/* ---------------- password reset ---------------- */
+
+describe('password reset', () => {
+  let adminCookie
+  let memberCookie
+
+  before(async () => {
+    const admin = await rpc('home.lvh.me', 'auth.login', [{ email: 'jane@example.com', password: 'hunter2secret' }])
+    adminCookie = cookieFrom(admin.setCookie)
+    const member = await rpc('home.lvh.me', 'auth.login', [{ email: 'bob@example.com', password: 'hunter2secret' }])
+    memberCookie = cookieFrom(member.setCookie)
+  })
+
+  let token
+
+  it('admin generates a reset link for a member', async () => {
+    const bob = platform.prepare('SELECT id FROM users WHERE email = ?').get('bob@example.com')
+    const res = await rpc('home.lvh.me', 'auth.resetPasswordLink', [{ userId: bob.id }], { cookie: adminCookie })
+    assert.equal(res.status, 200)
+    assert.equal(res.json.result.email, 'bob@example.com')
+    assert.ok(res.json.result.token, 'returns a reset token')
+    token = res.json.result.token
+  })
+
+  it('auth.resetPasswordInfo resolves a valid token', async () => {
+    const res = await rpc('home.lvh.me', 'auth.resetPasswordInfo', [{ token }])
+    assert.equal(res.status, 200)
+    assert.equal(res.json.result.valid, true)
+    assert.equal(res.json.result.email, 'bob@example.com')
+  })
+
+  it('auth.resetPasswordInfo rejects unknown tokens', async () => {
+    const res = await rpc('home.lvh.me', 'auth.resetPasswordInfo', [{ token: 'not-a-real-token' }])
+    assert.equal(res.status, 200)
+    assert.equal(res.json.result.valid, false)
+  })
+
+  it('only admins can generate reset links', async () => {
+    const bob = platform.prepare('SELECT id FROM users WHERE email = ?').get('bob@example.com')
+    const res = await rpc('home.lvh.me', 'auth.resetPasswordLink', [{ userId: bob.id }], { cookie: memberCookie })
+    assert.equal(res.status, 403)
+    assert.equal(res.json.error.code, 'FORBIDDEN')
+  })
+
+  it('cannot generate a reset link for a user outside the family', async () => {
+    const carol = platform.prepare('SELECT id FROM users WHERE email = ?').get('carol@example.com')
+    const res = await rpc('home.lvh.me', 'auth.resetPasswordLink', [{ userId: carol.id }], { cookie: adminCookie })
+    assert.equal(res.status, 404)
+    assert.equal(res.json.error.code, 'NOT_FOUND')
+  })
+
+  it('rejects a short new password', async () => {
+    const res = await rpc('home.lvh.me', 'auth.resetPassword', [{ token, password: 'short' }])
+    assert.equal(res.status, 400)
+    assert.equal(res.json.error.code, 'INVALID_ARGS')
+  })
+
+  it('resets the password, consumes the token, and kills old sessions', async () => {
+    const res = await rpc('home.lvh.me', 'auth.resetPassword', [{ token, password: 'brandnewsecret' }])
+    assert.equal(res.status, 200)
+    assert.equal(res.json.result.ok, true)
+
+    // the old password no longer works
+    const oldLogin = await rpc('home.lvh.me', 'auth.login', [{ email: 'bob@example.com', password: 'hunter2secret' }])
+    assert.equal(oldLogin.status, 401)
+
+    // the new password works
+    const newLogin = await rpc('home.lvh.me', 'auth.login', [{ email: 'bob@example.com', password: 'brandnewsecret' }])
+    assert.equal(newLogin.status, 200)
+
+    // the member's pre-reset session was invalidated
+    const meta = await rpc('home.lvh.me', 'meta', [], { cookie: memberCookie })
+    assert.equal(meta.json.result.user, null)
+
+    // the token is single-use
+    const again = await rpc('home.lvh.me', 'auth.resetPassword', [{ token, password: 'anothersecret' }])
+    assert.equal(again.status, 403)
+    assert.equal(again.json.error.code, 'FORBIDDEN')
+  })
+})
+
 /* ---------------- multi-family ---------------- */
 
 describe('multi-family', () => {
