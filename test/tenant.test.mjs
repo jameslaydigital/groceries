@@ -11,7 +11,6 @@ const DATA_DIR = mkdtempSync(join(tmpdir(), 'groceries-tenant-test-'))
 process.env.DATA_DIR = DATA_DIR
 process.env.PLATFORM_DB = join(DATA_DIR, 'platform.db')
 process.env.SKIP_LEGACY_ADOPTION = '1'
-process.env.BASE_DOMAIN = 'example.com'
 process.env.DEFAULT_HOSTS = '10.0.0.9,203.0.113.7'
 
 const {
@@ -110,12 +109,11 @@ describe('tenantKeyFromHost', () => {
     assert.equal(tenantKeyFromHost('JaMeS.lvh.me'), 'james')
   })
 
-  it('maps localhost / loopback / bare lvh.me to the default tenant', () => {
+  it('maps localhost / loopback / bare IPs to the default tenant', () => {
     assert.equal(tenantKeyFromHost('localhost:8787'), DEFAULT_SUBDOMAIN)
     assert.equal(tenantKeyFromHost('localhost'), DEFAULT_SUBDOMAIN)
     assert.equal(tenantKeyFromHost('127.0.0.1:8787'), DEFAULT_SUBDOMAIN)
-    assert.equal(tenantKeyFromHost('lvh.me'), DEFAULT_SUBDOMAIN)
-    assert.equal(tenantKeyFromHost('lvh.me:8787'), DEFAULT_SUBDOMAIN)
+    assert.equal(tenantKeyFromHost('127.0.0.1'), DEFAULT_SUBDOMAIN)
   })
 
   it('maps explicitly configured DEFAULT_HOSTS to the default tenant', () => {
@@ -126,13 +124,17 @@ describe('tenantKeyFromHost', () => {
     assert.notEqual(tenantKeyFromHost('198.51.100.55'), DEFAULT_SUBDOMAIN)
   })
 
-  it('handles a production BASE_DOMAIN', () => {
+  it('uses the leftmost label as the tenant, regardless of base domain', () => {
     assert.equal(tenantKeyFromHost('home.example.com'), DEFAULT_SUBDOMAIN)
     assert.equal(tenantKeyFromHost('james.example.com'), 'james')
-    assert.equal(tenantKeyFromHost('example.com'), DEFAULT_SUBDOMAIN)
-    // crafted aliases must not alias into a real tenant under the base domain
-    assert.notEqual(tenantKeyFromHost('eviljames.example.com'), 'james')
-    assert.notEqual(tenantKeyFromHost('james.example.com.evil.net'), 'james')
+    assert.equal(tenantKeyFromHost('home.progressive-apps.com'), DEFAULT_SUBDOMAIN)
+    assert.equal(tenantKeyFromHost('james.progressive-apps.com'), 'james')
+    assert.equal(tenantKeyFromHost('home.lvh.me'), DEFAULT_SUBDOMAIN)
+    assert.equal(tenantKeyFromHost('james.lvh.me'), 'james')
+    // the apex has no subdomain — its leftmost label is the whole domain
+    assert.equal(tenantKeyFromHost('progressive-apps.com'), 'progressive-apps')
+    // the base domain is not required to be known or configured
+    assert.equal(tenantKeyFromHost('james.any-other-domain.net'), 'james')
   })
 
   it('maps IPv6 loopback literals to the default tenant', () => {
@@ -146,26 +148,24 @@ describe('tenantKeyFromHost', () => {
     assert.equal(tenantKeyFromHost('james.lvh.me:80'), 'james')
   })
 
-  it('does not let a crafted host alias into an existing tenant', () => {
-    // suffix injection
-    assert.notEqual(tenantKeyFromHost('james.lvh.me.evil.com'), 'james')
-    // prefix injection
-    assert.notEqual(tenantKeyFromHost('eviljames.lvh.me'), 'james')
-    // trailing dot — not a valid subdomain
-    assert.notEqual(tenantKeyFromHost('james.lvh.me.'), 'james')
-    // double dot
-    assert.notEqual(tenantKeyFromHost('james..lvh.me'), 'james')
-    // multi-label → sanitized to a distinct key, never the plain tenant
-    assert.notEqual(tenantKeyFromHost('a.b.lvh.me'), 'james')
-    assert.equal(tenantKeyFromHost('a.b.lvh.me'), 'a-b')
+  it('ignores everything after the leftmost label', () => {
+    // the tenant is decided by the first label alone, so suffix/prefix tricks
+    // resolve by that label — access is still gated by session + membership
+    assert.equal(tenantKeyFromHost('james.lvh.me.evil.com'), 'james')
+    assert.equal(tenantKeyFromHost('eviljames.lvh.me'), 'eviljames')
+    assert.equal(tenantKeyFromHost('a.b.lvh.me'), 'a')
+    assert.equal(tenantKeyFromHost('lvh.me'), 'lvh')
   })
 
-  it('sanitizes hostile input into harmless keys', () => {
-    assert.equal(tenantKeyFromHost('../etc/passwd'), '---etc-passwd')
-    assert.equal(tenantKeyFromHost('/etc/passwd'), '-etc-passwd')
-    assert.equal(tenantKeyFromHost('..'), '--')
+  it('sanitizes hostile input into harmless or rejected keys', () => {
+    // path-ish input: the leftmost label is empty/garbage → rejected as null
+    assert.equal(tenantKeyFromHost('../etc/passwd'), null)
+    assert.equal(tenantKeyFromHost('..'), null)
     assert.equal(tenantKeyFromHost('a/b'), 'a-b')
     assert.equal(tenantKeyFromHost('hello world'), 'hello-world')
+    // no dots → the whole (sanitized) string is the label; getTenantDb rejects
+    // keys that don't match the subdomain whitelist (e.g. leading '-')
+    assert.equal(tenantKeyFromHost('/etc/passwd'), '-etc-passwd')
   })
 
   it('returns null for empty / missing hosts', () => {
@@ -210,12 +210,19 @@ describe('tenant selection over HTTP', () => {
   })
 
   it('rejects unknown subdomains with NO_FAMILY', async () => {
-    for (const host of ['nope.lvh.me', 'james.lvh.me.evil.com', 'james.lvh.me.', 'a.b.lvh.me']) {
+    for (const host of ['nope.lvh.me', 'missing.progressive-apps.com', 'a.b.lvh.me']) {
       const res = await rpc(host, 'meta')
       assert.equal(res.status, 404, `expected 404 for Host ${host}`)
       assert.equal(res.json.ok, false)
       assert.equal(res.json.error.code, 'NO_FAMILY')
     }
+  })
+
+  it('resolves the same family on any base domain', async () => {
+    const res = await rpc('james.progressive-apps.com', 'meta')
+    assert.equal(res.status, 200)
+    assert.equal(res.json.result.family.subdomain, 'james')
+    assert.equal(res.json.result.family.name, 'James Family')
   })
 
   it('rejects a request with no Host header', async () => {
@@ -262,15 +269,14 @@ describe('tenant data isolation', () => {
 describe('hostile Host headers', () => {
   it('never creates files outside the tenant data dir', async () => {
     const hostile = [
-      '../../../../etc/passwd',
-      '/etc/passwd',
-      '..',
-      'a/b',
-      'hello world',
-      'james.lvh.me.evil.com',
-      'eviljames.lvh.me',
-      'james.lvh.me.',
-      'a.b.lvh.me',
+      '../../../../etc/passwd', // → null → NO_FAMILY
+      '/etc/passwd', // → '-etc-passwd' → invalid key → NO_FAMILY
+      '..', // → null → NO_FAMILY
+      'a/b', // → 'a-b' → invalid key → NO_FAMILY
+      'hello world', // → 'hello-world' → no such family → NO_FAMILY
+      'eviljames.lvh.me', // → 'eviljames' → no such family → NO_FAMILY
+      'a.b.lvh.me', // → 'a' → no such family → NO_FAMILY
+      'missing.progressive-apps.com', // → 'missing' → no such family → NO_FAMILY
     ]
     for (const host of hostile) {
       // some hosts trip the HTTP client's own header validation; a client-side
@@ -278,7 +284,9 @@ describe('hostile Host headers', () => {
       const res = await rpc(host, 'snapshot').catch(() => null)
       if (res) assert.equal(res.status, 404, `Host ${JSON.stringify(host)} should be 404`)
     }
-    // the only files created in the data dir are the two tenants (plus WAL/SHM)
+    // Hosts whose leftmost label IS an existing family (e.g. james.lvh.me.evil.com)
+    // are intentionally accepted under the leftmost-label model — they reuse the
+    // existing family db, and access is gated by session + membership.
     const files = filesInDataDir()
     const dbs = files.filter((f) => f.endsWith('.db'))
     assert.deepEqual(dbs.sort(), ['home.db', 'james.db'])

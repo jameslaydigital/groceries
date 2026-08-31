@@ -37,9 +37,11 @@ Subdomains via `lvh.me` → e.g. `http://james.lvh.me:5173`.
     invites) and per-family tenant DBs at `families/<subdomain>.db`
     (categories, items, tags, item_tags). Migrations via `PRAGMA user_version`.
   - **Tenant resolution:** `tenantKeyFromHost()` reads the `Host` header.
-    Recognizes `lvh.me` (dev), `BASE_DOMAIN` env (prod), `localhost`/loopback,
-    and `DEFAULT_HOSTS` env (bare IPs before DNS is wired). Unknown hosts →
-    `NO_FAMILY`. `buildCtx(req)` → `{ db, family, user, role, families, bootstrap }`.
+    The tenant key is simply the **leftmost label** of the host (base-domain
+    agnostic — any `*.yourdomain` resolves the same family). `localhost`/
+    loopback and `DEFAULT_HOSTS` env (bare IPs before DNS is wired) map to the
+    default family. Unknown hosts → `NO_FAMILY`. `buildCtx(req)` →
+    `{ db, family, user, role, families, bootstrap }`.
   - **RPC:** `POST /rpc` with `{ method, params }` → `{ ok, result }` /
     `{ ok, error }`. Dispatcher is the `methods` map; handlers get `ctx`.
     `PUBLIC_METHODS` (ping/meta/auth.*) are unauthenticated; everything else
@@ -54,7 +56,7 @@ Subdomains via `lvh.me` → e.g. `http://james.lvh.me:5173`.
     broadcast set. After any mutation, the server pushes the fresh snapshot to
     that family's connected clients.
   - **Env:** `PORT`, `BIND_HOST` (default `127.0.0.1` — app should sit behind a
-    proxy), `BASE_DOMAIN`, `DEFAULT_HOSTS`, `COOKIE_DOMAIN`, `COOKIE_SECURE`,
+    proxy), `DEFAULT_HOSTS`, `COOKIE_DOMAIN`, `COOKIE_SECURE`,
     `DEFAULT_SUBDOMAIN` (default `home`), `AUTH_RATE_MS`, `DATA_DIR`,
     `PLATFORM_DB`.
 - **`src/lib/rpc.js`** — client `rpc(method, ...params)`; throws `RpcError`

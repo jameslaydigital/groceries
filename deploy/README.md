@@ -46,7 +46,6 @@ Group=deploy
 WorkingDirectory=/opt/syncart
 Environment=NODE_ENV=production
 Environment=PORT=8787
-Environment=BASE_DOMAIN=yourdomain.com
 Environment=COOKIE_DOMAIN=.yourdomain.com
 Environment=COOKIE_SECURE=1
 # Before DNS is wired up, a bare host/IP maps to the default family:
@@ -158,5 +157,5 @@ Secure cookies).
 1. Register a domain; point `yourdomain.com` + `*.yourdomain.com` A records → 23.239.29.165.
 2. Create a Linode API token (DNS scope) for Caddy's wildcard cert.
 3. Build a Caddy with `github.com/caddy-dns/linode` (`xcaddy build --with ...`) and replace `/usr/bin/caddy`.
-4. Set `BASE_DOMAIN`, `COOKIE_DOMAIN=.yourdomain.com`, `COOKIE_SECURE=1` in `syncart.service`; swap the Caddyfile for the TLS version (`deploy/Caddyfile`).
+4. Set `COOKIE_DOMAIN=.yourdomain.com`, `COOKIE_SECURE=1` in `syncart.service`; swap the Caddyfile for the TLS version (`deploy/Caddyfile`).
 

@@ -15,8 +15,6 @@ const PORT = process.env.PORT || 8787
 // Set BIND_HOST=0.0.0.0 in container setups where a peer service connects to it.
 const BIND_HOST = process.env.BIND_HOST || '127.0.0.1'
 const DEFAULT_SUBDOMAIN = process.env.DEFAULT_SUBDOMAIN || 'home'
-// Production base domain, e.g. "example.com" → home.example.com, james.example.com
-const BASE_DOMAIN = String(process.env.BASE_DOMAIN ?? '').trim().toLowerCase()
 // Extra hosts (e.g. a bare server IP) that should map to the default tenant,
 // useful before DNS/subdomains are wired up.
 const DEFAULT_HOSTS = new Set(
@@ -233,14 +231,11 @@ function tenantKeyFromHost(host) {
   h = h.split(':')[0]
   if (h === 'localhost' || h === '127.0.0.1' || h === '::1') return DEFAULT_SUBDOMAIN
   if (DEFAULT_HOSTS.has(h)) return DEFAULT_SUBDOMAIN
-  for (const bare of ['lvh.me', BASE_DOMAIN].filter(Boolean)) {
-    if (h === bare) return DEFAULT_SUBDOMAIN
-    if (h.endsWith('.' + bare)) {
-      const key = h.slice(0, -(bare.length + 1)).replace(/[^a-z0-9-]/g, '-')
-      if (key) return key
-    }
-  }
-  return h.replace(/[^a-z0-9-]/g, '-') || null
+  // The tenant is decided by the leftmost label alone — the base domain is
+  // deliberately irrelevant, so any wildcard host (e.g. *.progressive-apps.com)
+  // resolves to the same family without configuration.
+  const key = h.split('.')[0].replace(/[^a-z0-9-]/g, '-')
+  return key || null
 }
 
 class TenantError extends Error {
