@@ -217,6 +217,7 @@
     <div class="sheet" role="dialog" aria-modal="true" aria-label="Add item" style="--drag: {dragY}px" class:dragging={dragging}>
       <div
         class="grabber-zone"
+        role="presentation"
         ontouchstart={onDragStart}
         ontouchmove={onDragMove}
         ontouchend={onDragEnd}
