@@ -47,14 +47,23 @@
 
 <style>
   .row {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: 14px;
-    padding: 12px 12px 12px 14px;
-    background: var(--card);
-    border: 1px solid var(--card-border);
-    border-radius: 18px;
-    box-shadow: var(--card-shadow);
+    gap: 12px;
+    padding: 9px 2px;
+  }
+  .row:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -3px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--card-border) 12%, var(--card-border) 88%, transparent);
+  }
+  .row:last-child {
+    padding-bottom: 2px;
   }
 
   .check {
@@ -153,7 +162,7 @@
   .delete {
     flex: none;
     border: 0;
-    background: var(--chip-bg);
+    background: transparent;
     color: var(--muted);
     width: 30px;
     height: 30px;

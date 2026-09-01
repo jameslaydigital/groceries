@@ -212,19 +212,6 @@
       </div>
     </header>
 
-    <div class="search-wrap">
-      <span class="search-ico">🔍</span>
-      <input
-        bind:value={ui.search}
-        type="search"
-        placeholder="Search the list…"
-        aria-label="Search items"
-      />
-      {#if ui.search}
-        <button class="clear" onclick={() => (ui.search = '')} aria-label="Clear search">✕</button>
-      {/if}
-    </div>
-
     <div class="chips">
       <button class="chip" class:active={ui.activeCategory === 'All'} onclick={() => (ui.activeCategory = 'All')}>
         <span>🍎</span> All
@@ -497,56 +484,6 @@
     color: var(--danger);
   }
 
-  .search-wrap {
-    position: relative;
-    display: flex;
-    align-items: center;
-    animation: fade-down 0.5s ease 0.06s both;
-  }
-  .search-ico {
-    position: absolute;
-    left: 15px;
-    font-size: 15px;
-    opacity: 0.85;
-    pointer-events: none;
-  }
-  .search-wrap input {
-    width: 100%;
-    border: 1.5px solid var(--card-border);
-    background: var(--card);
-    color: var(--ink);
-    border-radius: 16px;
-    padding: 13px 42px;
-    font-size: 16px;
-    font-weight: 600;
-    outline: none;
-    box-shadow: var(--card-shadow);
-    transition: border-color 0.15s, box-shadow 0.15s;
-    font-family: inherit;
-    -webkit-appearance: none;
-  }
-  .search-wrap input:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 4px var(--focus-ring);
-  }
-  .search-wrap input::-webkit-search-cancel-button {
-    display: none;
-  }
-  .clear {
-    position: absolute;
-    right: 10px;
-    border: 0;
-    background: var(--check-bg);
-    color: var(--muted);
-    width: 28px;
-    height: 28px;
-    border-radius: 9px;
-    cursor: pointer;
-    font-size: 12px;
-    display: grid;
-    place-items: center;
-  }
-
   .chips {
     display: flex;
     gap: 8px;
@@ -594,6 +531,10 @@
   }
   .chip:active {
     transform: scale(0.94);
+  }
+
+  .chips.tags {
+    margin-bottom: 20px;
   }
 
   .shopping-banner {
@@ -655,6 +596,10 @@
     animation: fade-up 0.4s ease both;
   }
   .group {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+    padding: 10px 12px 12px;
     animation: fade-up 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
     animation-delay: var(--d, 0ms);
   }
@@ -662,7 +607,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 0 6px 9px;
+    padding: 0 2px 8px;
   }
   .g-icon {
     font-size: 15px;
@@ -687,7 +632,7 @@
   .items {
     display: flex;
     flex-direction: column;
-    gap: 9px;
+    gap: 6px;
   }
 
   .empty {
