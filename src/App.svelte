@@ -429,11 +429,10 @@
     height: 30px;
     width: auto;
     display: block;
-    filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.14));
   }
   @media (prefers-color-scheme: dark) {
     .wordmark {
-      filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.4)) brightness(1.28);
+      filter: brightness(1.28);
     }
   }
   .titles p {
