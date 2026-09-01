@@ -15,7 +15,7 @@ The current `server.js` opened a single `groceries.db` at startup and every RPC 
 - **`families/<subdomain>.db`** (per tenant): categories, items, tags, item_tags
 
 **Tenant resolution:**
-- The tenant key is the **leftmost label** of the `Host` header — base-domain agnostic, so `james.lvh.me`, `james.progressive-apps.com`, or `james.any-domain.net` all resolve to the `james` family with no configuration.
+- The tenant key is the **leftmost label** of the `Host` header — base-domain agnostic, so `james.lvh.me`, `james.yourdomain.com`, or `james.any-domain.net` all resolve to the `james` family with no configuration.
 - `localhost`/loopback and `DEFAULT_HOSTS` env (bare IPs before DNS is wired) map to the default (`home`) family. Unknown labels → `NO_FAMILY`.
 - Look up the family in `platform.db`; lazily open (and cache) that family's sqlite file.
 - Migrations per tenant DB tracked via `PRAGMA user_version`.
@@ -73,8 +73,8 @@ Shop by store — Costco / Trader Joe's / Smith's.
 - ✅ **Backups** — `npm run backup` snapshots `platform.db` + every tenant DB via `VACUUM INTO` into timestamped `backups/` dirs.
 - ✅ **Session hardening** — only a sha256 hash of the session token is stored; sessions expire after 30 days and are rejected when expired.
 - ✅ **Cookie flags** — `HttpOnly`, `SameSite=Lax`; `Secure` when `COOKIE_SECURE=1`.
-- ✅ **Live deployment** — native Linode box behind Caddy, real wildcard domain (`*.progressive-apps.com` → `23.239.29.165`), systemd unit + nightly `VACUUM INTO` backups. App is bound to loopback; only Caddy reaches it.
-- ⏳ **HTTPS/TLS** — still serving plain HTTP (interim `:80` Caddy proxy). Needs the Caddy binary built with the Linode DNS module for a wildcard cert, then `COOKIE_SECURE=1` + `COOKIE_DOMAIN=.progressive-apps.com`. Required for the PWA install prompt and secure cookies.
+- ✅ **Live deployment** — native Linode box behind Caddy, real wildcard domain, systemd unit + nightly `VACUUM INTO` backups. App is bound to loopback; only Caddy reaches it. The box's identity lives only in its own config — not in this repo.
+- ⏳ **HTTPS/TLS** — still serving plain HTTP (interim `:80` Caddy proxy). Needs the Caddy binary built with the Linode DNS module for a wildcard cert, then `COOKIE_SECURE=1` + `COOKIE_DOMAIN=.yourdomain.com`. Required for the PWA install prompt and secure cookies.
 - ⏳ **Self-serve password reset** — currently only admins can mint reset links; a user can't request one for themselves (needs email delivery).
 - ⏳ **Hardening option** — per-subdomain sessions with a short-lived signed switch token (instead of the parent-domain cookie) if the threat model ever warrants it.
 - ⏳ **Scale-out** — the in-memory SSE broadcast means a single process; swap in pub/sub (Redis) if ever running multiple replicas.
@@ -83,7 +83,7 @@ Shop by store — Costco / Trader Joe's / Smith's.
 
 ## Now / Next
 
-1. **HTTPS** — wildcard cert via Caddy + Linode DNS module; flip `COOKIE_SECURE=1`, `COOKIE_DOMAIN=.progressive-apps.com`; drop the plain `:80` site. Unlocks the PWA install prompt.
+1. **HTTPS** — wildcard cert via Caddy + Linode DNS module; flip `COOKIE_SECURE=1`, `COOKIE_DOMAIN=.yourdomain.com`; drop the plain `:80` site. Unlocks the PWA install prompt.
 2. **Self-serve password reset** — "forgot password" on the login screen that emails a `/reset/<token>` link (needs an email/SMTP path for invites and resets alike).
 3. **Family provisioning from the UI** — today families are created via `npm run family create`; a "create family" flow in-app would let anyone spin up a subdomain without shell access.
 

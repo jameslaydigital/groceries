@@ -53,7 +53,7 @@ Environment=PORT=8787
 Environment=COOKIE_DOMAIN=.yourdomain.com
 Environment=COOKIE_SECURE=1
 # Before DNS is wired up, a bare host/IP maps to the default family:
-Environment=DEFAULT_HOSTS=23.239.29.165
+Environment=DEFAULT_HOSTS=<your-ip>
 ExecStart=/usr/bin/node server.js
 Restart=always
 RestartSec=3
@@ -135,32 +135,31 @@ retaining the newest `KEEP_BACKUPS`. Manually: `npm run backup`.
 
 ---
 
-## Current live box (as of Aug 2026)
+## Current live box
 
 | | |
 |---|---|
-| Host | **Linode `g6-nanode-1gb`** (1 vCPU / 1GB / 25GB), Ubuntu 26.04, hostname `syncart` |
-| Public IP | **23.239.29.165** |
-| Access | `ssh syncart` (laptop `~/.ssh/config` → user `deploy`, key `~/.ssh/id_syncart_deploy`) |
+| Host | Linode `g6-nanode-1gb`, Ubuntu LTS, hostname `syncart` |
+| Access | `ssh syncart` (laptop `~/.ssh/config` → user `deploy`) |
 | App | `/opt/syncart`, built, `systemd` unit `syncart.service`, binds `127.0.0.1:8787` |
-| Proxy | Caddy 2.6.2 (apt), reverse-proxies `:80` → `127.0.0.1:8787`. Interim Caddyfile is a plain `:80` proxy (no TLS yet). |
-| Data dir | `/var/lib/syncart/` (`families/` + `platform.db`), set via `/opt/syncart/.env` — outside the deployed tree so deploys can't touch it |
-| Known login | `dev@example.com` / `devpassword` (admin of `home`), from `npm run setup` |
+| Proxy | Caddy, reverse-proxies `:80` → `127.0.0.1:8787` |
+| Data dir | `/var/lib/syncart/` (`families/` + `platform.db`), set via `/opt/syncart/.env` — outside the deployed tree |
+| Config | `/opt/syncart/.env` (preserved by deploys) + systemd `Environment=` lines |
 
-**Security posture (applied):** root SSH disabled (`PermitRootLogin no`),
-password auth off (key-only), root password locked, fail2ban active (sshd
-jail), UFW allows only 22/80/443, app bound to loopback, unattended-upgrades
-on, systemd hardening on the service (`NoNewPrivileges`, `ProtectSystem=full`,
-etc.). The `deploy` user keeps **blanket passwordless sudo** by choice — the SSH
-private key is treated as the trust boundary.
+> The box's real identity — IP, domain, credentials — is intentionally **not
+> in this repo**; it lives only in the box's own config (`.env` / systemd /
+> Caddy). In production the app refuses to start unless it's told its
+> environment (`COOKIE_DOMAIN`, `COOKIE_SECURE`, `DATA_DIR`, `PLATFORM_DB`).
 
-**Interim access without a domain:** `DEFAULT_HOSTS=23.239.29.165` maps the raw
-IP to the `home` family, so `http://23.239.29.165` works today (HTTP, no
-Secure cookies).
+**Security posture:** root SSH disabled, key-only auth, fail2ban, UFW 22/80/443,
+app bound to loopback, systemd hardening, unattended-upgrades.
+
+**Interim access without a domain:** set `DEFAULT_HOSTS=<your-ip>` so the raw IP
+maps to the `home` family over HTTP (no Secure cookies until TLS).
 
 **Not done yet — the domain/TLS step:**
-1. Register a domain; point `yourdomain.com` + `*.yourdomain.com` A records → 23.239.29.165.
+1. Point `yourdomain.com` + `*.yourdomain.com` A records → `<your-ip>`.
 2. Create a Linode API token (DNS scope) for Caddy's wildcard cert.
 3. Build a Caddy with `github.com/caddy-dns/linode` (`xcaddy build --with ...`) and replace `/usr/bin/caddy`.
-4. Set `COOKIE_DOMAIN=.yourdomain.com`, `COOKIE_SECURE=1` in `syncart.service`; swap the Caddyfile for the TLS version (`deploy/Caddyfile`).
+4. Set `COOKIE_DOMAIN=.yourdomain.com`, `COOKIE_SECURE=1`; swap the Caddyfile for the TLS version (`deploy/Caddyfile`).
 

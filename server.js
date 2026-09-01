@@ -9,6 +9,20 @@ import { loadEnv } from './scripts/load-env.mjs'
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url))
 loadEnv({ root: ROOT })
+
+// In production the environment must be explicit — no silent defaults that
+// bake server facts (data paths, cookie domain, TLS) into the repo. Dev keeps
+// the built-in defaults so a fresh clone just works.
+if (process.env.NODE_ENV === 'production') {
+  const REQUIRED = ['COOKIE_DOMAIN', 'COOKIE_SECURE', 'DATA_DIR', 'PLATFORM_DB']
+  const missing = REQUIRED.filter((k) => !process.env[k])
+  if (missing.length) {
+    console.error(`❌ syncart won't start: missing required config: ${missing.join(', ')}`)
+    console.error('   Set these via environment variables or a .env file (see .env.example).')
+    process.exit(1)
+  }
+}
+
 const DIST = join(ROOT, 'dist')
 const DATA_DIR = process.env.DATA_DIR || join(ROOT, 'families')
 const PLATFORM_DB = process.env.PLATFORM_DB || join(ROOT, 'platform.db')

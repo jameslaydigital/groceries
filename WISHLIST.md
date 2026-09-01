@@ -40,7 +40,7 @@ fold the winners into the roadmap when we decide to build them.
 - [ ] **Multi-process support** — swap the in-memory SSE broadcast for pub/sub so we can run more than one replica.
 
 ## Platform & infra
-- [ ] **HTTPS + wildcard cert** — Caddy built with the Linode DNS module; flip `COOKIE_SECURE=1` and `COOKIE_DOMAIN=.progressive-apps.com`; drop the plain `:80` site.
+- [ ] **HTTPS + wildcard cert** — Caddy built with the Linode DNS module; flip `COOKIE_SECURE=1` and `COOKIE_DOMAIN=.yourdomain.com`; drop the plain `:80` site.
 - [ ] **In-app family creation** — spin up a new subdomain from the UI instead of `npm run family create`.
 - [ ] **Domain rename / family settings** — change family name, transfer admin, archive a family.
 - [ ] **Backup restore UI** — restore a snapshot from the backups dir via the CLI (or UI).
