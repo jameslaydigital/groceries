@@ -121,7 +121,8 @@ retaining the newest `KEEP_BACKUPS`. Manually: `npm run backup`.
 
 ## 7. Day-to-day
 
-- **Deploy an update:** from the repo, `npm run deploy -- --push` (commit-then-push with `-m "msg"`, or just `npm run deploy` to sync the working tree). The box can't `git pull` from the laptop-only `jldgithub` alias, so the script rsyncs the repo over, builds, and restarts `syncart.service`.
+- **Deploy an update:** from the repo, `npm run deploy -- --push` (commit-then-push with `-m "msg"`, or just `npm run deploy` to sync the working tree). The box can't `git pull` from the laptop-only `jldgithub` alias, so the script rsyncs the repo over, builds, and restarts `syncart.service`. **The box's `/opt/syncart/.env` is excluded from rsync (and from `--delete`), so server config is never overwritten by a deploy.**
+- **Configure the app:** set env vars as `Environment=` lines in the systemd unit (root), *or* drop a `.env` file in `/opt/syncart` (no root) — real env vars win over `.env`, and `.env` wins over built-in defaults. Copy `.env.example` to start. The deploy script prints a reminder if the box has no `.env`.
 - **Provision a family:** `node scripts/create-family.mjs create james "The James Family"`
 - **Known test login:** `node scripts/setup.mjs` (creates/resets `dev@example.com` / `devpassword` on the default family).
 

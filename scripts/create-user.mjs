@@ -2,8 +2,10 @@ import { DatabaseSync } from 'node:sqlite'
 import { randomBytes, scryptSync } from 'node:crypto'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { loadEnv } from './load-env.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+loadEnv({ root: ROOT })
 
 const usage = `Usage: npm run user -- create <family> <email> <password> [--name "<Display Name>"] [--member]
   e.g.  npm run user -- create james me@example.com hunter2 --name "James"

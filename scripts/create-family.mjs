@@ -1,8 +1,10 @@
 import { DatabaseSync } from 'node:sqlite'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { loadEnv } from './load-env.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+loadEnv({ root: ROOT })
 
 const [cmd, subdomain, ...nameParts] = process.argv.slice(2)
 

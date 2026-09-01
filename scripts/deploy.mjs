@@ -1,17 +1,20 @@
 import { spawnSync } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { loadEnv } from './load-env.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+loadEnv({ root: ROOT })
 const HOST = process.env.SYNCART_HOST || 'syncart'
 
 /* ---------------- arg parsing ---------------- */
 
-const flags = { push: false, message: null }
+const flags = { push: false, message: null, dryRun: false }
 const args = process.argv.slice(2)
 for (let i = 0; i < args.length; i++) {
   const a = args[i]
   if (a === '--push') flags.push = true
+  else if (a === '--dry-run' || a === '-n') flags.dryRun = true
   else if (a === '-m' || a === '--message') flags.message = args[++i]
   else if (a === '--host') {
     const v = args[++i]
@@ -21,7 +24,7 @@ for (let i = 0; i < args.length; i++) {
     }
     flags.host = v
   } else {
-    console.error(`Unknown argument: ${a}\n\nUsage: npm run deploy [--push] [-m "message"] [--host <ssh-alias>]`)
+    console.error(`Unknown argument: ${a}\n\nUsage: npm run deploy [--push] [-m "message"] [--host <ssh-alias>] [--dry-run]`)
     process.exit(2)
   }
 }
@@ -64,15 +67,26 @@ if (flags.push) {
 const host = flags.host || HOST
 run('rsync', [
   '-az',
+  ...(flags.dryRun ? ['-n'] : []),
   '--delete',
   '--exclude', 'node_modules/',
   '--exclude', 'families/',
   '--exclude', 'platform.db*',
   '--exclude', 'backups/',
+  '--exclude', '.env',
   '-e', 'ssh',
   './',
   `${host}:/opt/syncart/`,
 ])
-run('ssh', [host, 'cd /opt/syncart && npm run build && sudo systemctl restart syncart && sleep 1 && systemctl is-active syncart'])
+
+if (flags.dryRun) {
+  console.log('\nℹ️  Dry run — nothing changed on the box. The DBs (families/, platform.db*) and .env are excluded either way.')
+  process.exit(0)
+}
+
+run('ssh', [
+  host,
+  'cd /opt/syncart && npm run build && sudo systemctl restart syncart && sleep 1 && systemctl is-active syncart; [ -f .env ] && echo "ℹ  .env preserved" || echo "⚠️  no /opt/syncart/.env — cp .env.example .env to configure"',
+])
 
 console.log('\n✅ Deployed to ' + host + ' — service active.')

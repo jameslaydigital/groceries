@@ -1,8 +1,10 @@
 import { mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { loadEnv } from './load-env.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+loadEnv({ root: ROOT })
 mkdirSync(process.env.DATA_DIR || join(ROOT, 'families'), { recursive: true })
 
 const { getTenantDb, platform, DEFAULT_SUBDOMAIN } = await import('../server.js')

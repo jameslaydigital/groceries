@@ -39,4 +39,7 @@ public/icons/logo_original.png
 public/icons/logo_transparent.png
 public/icons/logo_design_only.png
 
+# Local runtime config (loaded by scripts/load-env.mjs if present)
+.env
+
 deploy/.env

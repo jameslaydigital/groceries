@@ -5,8 +5,10 @@ import { extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from 'node:crypto'
+import { loadEnv } from './scripts/load-env.mjs'
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url))
+loadEnv({ root: ROOT })
 const DIST = join(ROOT, 'dist')
 const DATA_DIR = process.env.DATA_DIR || join(ROOT, 'families')
 const PLATFORM_DB = process.env.PLATFORM_DB || join(ROOT, 'platform.db')

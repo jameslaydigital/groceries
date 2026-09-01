@@ -55,10 +55,14 @@ Subdomains via `lvh.me` → e.g. `http://james.lvh.me:5173`.
   - **Realtime:** `GET /events` (SSE), authenticated, per-family in-memory
     broadcast set. After any mutation, the server pushes the fresh snapshot to
     that family's connected clients.
-  - **Env:** `PORT`, `BIND_HOST` (default `127.0.0.1` — app should sit behind a
-    proxy), `DEFAULT_HOSTS`, `COOKIE_DOMAIN`, `COOKIE_SECURE`,
+  - **Env:** config comes from environment variables with built-in defaults —
+    `PORT`, `BIND_HOST` (default `127.0.0.1` — app should sit behind a proxy),
+    `DEFAULT_HOSTS`, `COOKIE_DOMAIN`, `COOKIE_SECURE`,
     `DEFAULT_SUBDOMAIN` (default `home`), `AUTH_RATE_MS`, `DATA_DIR`,
-    `PLATFORM_DB`.
+    `PLATFORM_DB`. A root `.env` file is also loaded at startup by
+    `scripts/load-env.mjs` (real env vars / systemd `Environment=` win over it)
+    — see `.env.example`. The live box's `.env` is **preserved across deploys**:
+    `npm run deploy` excludes it from rsync.
 - **`src/lib/rpc.js`** — client `rpc(method, ...params)`; throws `RpcError`
   with `.code` (`OFFLINE`, `AUTH_REQUIRED`, `FORBIDDEN`, …). Offline mutations
   are queued in localStorage and replayed on `online`.

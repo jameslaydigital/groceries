@@ -2,8 +2,10 @@ import { DatabaseSync } from 'node:sqlite'
 import { mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { loadEnv } from './load-env.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+loadEnv({ root: ROOT })
 const DATA_DIR = process.env.DATA_DIR || join(ROOT, 'families')
 const PLATFORM_DB = process.env.PLATFORM_DB || join(ROOT, 'platform.db')
 const backupsRoot = process.env.BACKUP_DIR || join(ROOT, 'backups')
