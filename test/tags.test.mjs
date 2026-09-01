@@ -110,3 +110,63 @@ describe('tags', () => {
     assert.equal(res.json.error.code, 'AUTH_REQUIRED')
   })
 })
+
+/* ---------------- item history & suggestions ---------------- */
+
+describe('item history & suggestions', () => {
+  let cookie
+  let smithsId
+
+  before(async () => {
+    const res = await rpc('home.lvh.me', 'auth.login', [{ email: 'tagadmin@example.com', password: 'hunter2secret' }])
+    cookie = cookieFrom(res.setCookie)
+    const tags = await rpc('home.lvh.me', 'listTags', [], { cookie })
+    smithsId = tags.json.result.find((t) => t.name === "Smith's").id
+  })
+
+  it('addItem records history; suggestions return it with qty/category/tags', async () => {
+    await rpc('home.lvh.me', 'addItem', [{ name: 'Whole Milk', quantity: '2', category: 'Dairy', tag_ids: [smithsId] }], { cookie })
+    const sug = await rpc('home.lvh.me', 'suggestions', ['wh', 8], { cookie })
+    const milk = sug.json.result.find((s) => s.name === 'Whole Milk')
+    assert.ok(milk, 'history item is suggested')
+    assert.equal(milk.quantity, '2')
+    assert.equal(milk.category, 'Dairy')
+    assert.deepEqual(milk.tag_ids, [smithsId])
+  })
+
+  it('suggestions rank by how often you add an item', async () => {
+    await rpc('home.lvh.me', 'addItem', [{ name: 'Whole Milk', quantity: '1', category: 'Dairy' }], { cookie })
+    await rpc('home.lvh.me', 'addItem', [{ name: 'Whipped Cream', quantity: '1', category: 'Dairy' }], { cookie })
+    const sug = await rpc('home.lvh.me', 'suggestions', ['wh', 8], { cookie })
+    const names = sug.json.result.map((s) => s.name)
+    assert.ok(names.indexOf('Whole Milk') < names.indexOf('Whipped Cream'), 'more-used item ranks first')
+  })
+
+  it('deleteHistoryItem forgets an item once it is off the list', async () => {
+    const added = await rpc('home.lvh.me', 'addItem', [{ name: 'Sparkling Water', quantity: '1', category: 'Beverages' }], { cookie })
+    await rpc('home.lvh.me', 'deleteItem', [added.json.result.id], { cookie })
+
+    const before = await rpc('home.lvh.me', 'suggestions', ['spa', 8], { cookie })
+    assert.ok(before.json.result.some((s) => s.name === 'Sparkling Water'), 'removed item still remembered')
+
+    const del = await rpc('home.lvh.me', 'deleteHistoryItem', [{ name: 'Sparkling Water' }], { cookie })
+    assert.equal(del.status, 200)
+    assert.equal(del.json.result.deleted, true)
+
+    const after = await rpc('home.lvh.me', 'suggestions', ['spa', 8], { cookie })
+    assert.ok(!after.json.result.some((s) => s.name === 'Sparkling Water'), 'forgotten item is no longer suggested')
+  })
+
+  it('stale tag ids in history are filtered out on add', async () => {
+    const res = await rpc('home.lvh.me', 'addItem', [{ name: 'Bogus Tag Item', quantity: '1', category: 'Other', tag_ids: [999999] }], { cookie })
+    assert.equal(res.status, 200)
+    assert.deepEqual(res.json.result.tag_ids, [])
+  })
+
+  it('suggestions and deleteHistoryItem require auth', async () => {
+    const sug = await rpc('home.lvh.me', 'suggestions', ['wh'])
+    assert.equal(sug.status, 401)
+    const del = await rpc('home.lvh.me', 'deleteHistoryItem', [{ name: 'Whole Milk' }])
+    assert.equal(del.status, 401)
+  })
+})

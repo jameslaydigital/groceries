@@ -160,6 +160,16 @@ const TENANT_MIGRATIONS = [
      PRIMARY KEY (item_id, tag_id)
    );
    CREATE INDEX IF NOT EXISTS idx_item_tags_tag ON item_tags(tag_id);`,
+  `CREATE TABLE IF NOT EXISTS item_history (
+     name_key     TEXT PRIMARY KEY,
+     name         TEXT NOT NULL,
+     quantity     TEXT NOT NULL DEFAULT '1',
+     category     TEXT NOT NULL DEFAULT 'Other',
+     tag_ids      TEXT NOT NULL DEFAULT '[]',
+     uses         INTEGER NOT NULL DEFAULT 1,
+     last_used_at TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE INDEX IF NOT EXISTS idx_item_history_last_used ON item_history(last_used_at);`,
 ]
 
 const DEFAULT_CATEGORIES = [
@@ -481,6 +491,36 @@ function replaceItemTags(db, itemId, tagIds) {
   for (const tagId of tagIds) {
     db.prepare('INSERT OR IGNORE INTO item_tags (item_id, tag_id) VALUES (?, ?)').run(itemId, tagId)
   }
+}
+
+function tagIdsFor(db, itemId) {
+  return db.prepare('SELECT tag_id FROM item_tags WHERE item_id = ?').all(itemId).map((r) => r.tag_id)
+}
+
+// Keep a "you've added this before" memory per item so the add sheet can
+// dial in past items. The history is keyed by normalized name and bumped on
+// every add so the most-used items surface first.
+function rememberItem(db, name, quantity, category, tagIds) {
+  const key = String(name ?? '').trim().toLowerCase()
+  if (!key) return
+  db.prepare(
+    `INSERT INTO item_history (name_key, name, quantity, category, tag_ids, uses, last_used_at)
+     VALUES (?, ?, ?, ?, ?, 1, datetime('now'))
+     ON CONFLICT(name_key) DO UPDATE SET
+       name = excluded.name,
+       quantity = excluded.quantity,
+       category = excluded.category,
+       tag_ids = excluded.tag_ids,
+       uses = uses + 1,
+       last_used_at = datetime('now')`
+  ).run(key, String(name).trim(), String(quantity ?? '1').trim() || '1', String(category ?? 'Other').trim() || 'Other', JSON.stringify(tagIds ?? []))
+}
+
+// Filter tag ids down to ones that still exist, so stale history can't trip
+// the item_tags foreign key.
+function validTagIds(db, tagIds) {
+  const existing = new Set(db.prepare('SELECT id FROM tags').all().map((r) => r.id))
+  return Array.from(new Set((Array.isArray(tagIds) ? tagIds : []).map(Number).filter(Number.isInteger))).filter((id) => existing.has(id))
 }
 
 function snapshotOf(db) {
@@ -878,6 +918,7 @@ const methods = {
     if (!n) throw Object.assign(new Error('Name is required'), { code: 'INVALID_ARGS' })
     const qty = String(quantity ?? '1').trim() || '1'
     const cat = String(category ?? 'Other').trim() || 'Other'
+    const cleanTags = validTagIds(db, tag_ids)
 
     if (!catExists(db).get(cat)) {
       db.prepare('INSERT INTO categories (name) VALUES (?)').run(cat)
@@ -885,9 +926,10 @@ const methods = {
 
     const info = addItemStmt(db).run(n, qty, cat)
     const id = info.lastInsertRowid
-    if (Array.isArray(tag_ids) && tag_ids.length) {
-      replaceItemTags(db, id, Array.from(new Set(tag_ids.map(Number).filter(Number.isInteger))))
+    if (cleanTags.length) {
+      replaceItemTags(db, id, cleanTags)
     }
+    rememberItem(db, n, qty, cat, cleanTags)
     return withTagIds(db, [getItem(db).get(id)])[0]
   },
 
@@ -909,7 +951,10 @@ const methods = {
 
     updateItemStmt(db).run(name ?? null, quantity ?? null, category ?? null, checked ?? null, id)
     if (Array.isArray(patch.tag_ids)) {
-      replaceItemTags(db, id, Array.from(new Set(patch.tag_ids.map(Number).filter(Number.isInteger))))
+      replaceItemTags(db, id, validTagIds(db, patch.tag_ids))
+    }
+    if (name) {
+      rememberItem(db, name, quantity ?? existing.quantity, category ?? existing.category, validTagIds(db, Array.isArray(patch.tag_ids) ? patch.tag_ids : tagIdsFor(db, id)))
     }
     return withTagIds(db, [getItem(db).get(id)])[0]
   },
@@ -933,11 +978,44 @@ const methods = {
   },
 
   suggestions(ctx, prefix = '', limit = 8) {
-    const p = `%${String(prefix).trim()}%`
-    const rows = ctx.db
-      .prepare(`SELECT DISTINCT name, category FROM items WHERE LOWER(name) LIKE LOWER(?) ORDER BY name LIMIT ?`)
-      .all(p, Math.max(1, Math.min(20, Number(limit) || 8)))
-    return rows
+    const db = ctx.db
+    const q = String(prefix).trim().toLowerCase()
+    const lim = Math.max(1, Math.min(20, Number(limit) || 8))
+    if (!q) return []
+    // Most-used / most-recent history first, then current items that haven't
+    // been added through the sheet yet (e.g. seeded ones).
+    const fromHistory = db
+      .prepare(
+        `SELECT name, quantity, category, tag_ids
+         FROM item_history
+         WHERE name_key LIKE ?
+         ORDER BY uses DESC, last_used_at DESC
+         LIMIT ?`
+      )
+      .all(`${q}%`, lim)
+    const fromItems = db
+      .prepare(
+        `SELECT i.name, i.quantity, i.category, i.id AS item_id
+         FROM items i
+         LEFT JOIN item_history h ON h.name_key = LOWER(TRIM(i.name))
+         WHERE LOWER(i.name) LIKE ? AND h.name_key IS NULL
+         ORDER BY LOWER(i.name)
+         LIMIT ?`
+      )
+      .all(`${q}%`, lim)
+    return [...fromHistory, ...fromItems].map((r) => ({
+      name: r.name,
+      quantity: r.quantity,
+      category: r.category,
+      tag_ids: r.item_id ? tagIdsFor(db, r.item_id) : JSON.parse(r.tag_ids || '[]'),
+    }))
+  },
+
+  deleteHistoryItem(ctx, { name }) {
+    const key = String(name ?? '').trim().toLowerCase()
+    if (!key) throw Object.assign(new Error('Name is required'), { code: 'INVALID_ARGS' })
+    ctx.db.prepare('DELETE FROM item_history WHERE name_key = ?').run(key)
+    return { deleted: true }
   },
 }
 

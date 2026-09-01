@@ -320,6 +320,15 @@ export function categoryIcon(name) {
   return data.categories.find((c) => c.name === name)?.icon ?? '🛒'
 }
 
+export async function addTag(name, icon) {
+  const tag = await rpc('addTag', { name, icon })
+  if (!data.tags.some((t) => t.id === tag.id)) {
+    data.tags.push(tag)
+    markDirty()
+  }
+  return tag
+}
+
 export function tagsById() {
   return new Map(data.tags.map((t) => [t.id, t]))
 }

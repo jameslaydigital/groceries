@@ -1,5 +1,5 @@
 <script>
-  import { addItem, updateItem, data, ui, categoryIcon } from '../lib/store.svelte.js'
+  import { addItem, updateItem, removeItem, addTag, data, ui, categoryIcon, toast } from '../lib/store.svelte.js'
   import rpc from '../lib/rpc.js'
 
   let { open = $bindable(false) } = $props()
@@ -11,6 +11,9 @@
   let suggestions = $state([])
   let busy = $state(false)
   let input = $state(null)
+  let addingTag = $state(false)
+  let newTagName = $state('')
+  let newTagIcon = $state('🛒')
 
   let categories = $derived(data.categories)
   let tags = $derived(data.tags)
@@ -64,9 +67,36 @@
 
   function pickSuggestion(s) {
     name = s.name
-    quantity = '1'
+    quantity = s.quantity || '1'
     category = s.category
+    selectedTags = s.tag_ids ?? []
     suggestions = []
+  }
+
+  async function forget(s) {
+    try {
+      await rpc('deleteHistoryItem', { name: s.name })
+      suggestions = suggestions.filter((x) => x.name !== s.name)
+      toast(`Forgot "${s.name}"`, '🗑️')
+    } catch (e) {
+      toast(e.message, '⚠️')
+    }
+  }
+
+  async function addStore() {
+    const n = newTagName.trim()
+    if (!n || busy) return
+    busy = true
+    try {
+      const tag = await addTag(n, newTagIcon)
+      if (!selectedTags.includes(tag.id)) selectedTags = [...selectedTags, tag.id]
+      newTagName = ''
+      addingTag = false
+    } catch (e) {
+      toast(e.message, '⚠️')
+    } finally {
+      busy = false
+    }
   }
 
   function toggleTag(id) {
@@ -121,10 +151,15 @@
 
       {#if suggestions.length && !editingId}
         <div class="suggestions">
-          {#each suggestions as s (s.name + s.category)}
-            <button class="chip" onclick={() => pickSuggestion(s)}>
-              <span>{categoryIcon(s.category)}</span> {s.name}
-            </button>
+          {#each suggestions as s (s.name)}
+            <span class="chip-wrap">
+              <button class="chip" onclick={() => pickSuggestion(s)}>
+                <span>{categoryIcon(s.category)}</span>
+                <span class="chip-name">{s.name}</span>
+                <span class="chip-sub">{s.quantity}</span>
+              </button>
+              <button class="chip-del" onclick={() => forget(s)} aria-label={`Forget ${s.name}`}>✕</button>
+            </span>
           {/each}
         </div>
       {/if}
@@ -157,7 +192,7 @@
         </div>
       </div>
 
-      {#if tags.length}
+      {#if tags.length || addingTag}
         <div class="field">
           <span class="label">Stores</span>
           <div class="tag-row">
@@ -166,8 +201,33 @@
                 <span>{t.icon}</span> {t.name}
               </button>
             {/each}
+            {#if addingTag}
+              <span class="new-tag">
+                <input
+                  bind:value={newTagName}
+                  placeholder="Store name"
+                  autocomplete="off"
+                  onkeydown={(e) => e.key === 'Enter' && addStore()}
+                  onblur={() => {
+                    if (!newTagName.trim()) addingTag = false
+                  }}
+                />
+                <span class="icon-row">
+                  {#each ['🛒', '🥑', '🏬', '🥩', '🧑‍🌾', '🍎'] as ico (ico)}
+                    <button class:active={newTagIcon === ico} onclick={() => (newTagIcon = ico)} aria-label={`Icon ${ico}`}>{ico}</button>
+                  {/each}
+                </span>
+                <button class="new-tag-add" onclick={addStore} disabled={!newTagName.trim() || busy}>Add</button>
+              </span>
+            {:else}
+              <button class="tag-add" onclick={() => (addingTag = true)}>+ Store</button>
+            {/if}
           </div>
         </div>
+      {/if}
+
+      {#if editingId}
+        <button class="delete" onclick={() => { removeItem(editingId); close() }}>Delete item</button>
       {/if}
 
       <button class="submit" class:busy onclick={submit} disabled={!name.trim() || busy}>
@@ -330,18 +390,116 @@
   .tag-row button:active {
     transform: scale(0.95);
   }
+  .tag-add {
+    border: 1.5px dashed var(--input-border);
+    background: transparent;
+    color: var(--muted);
+    border-radius: 999px;
+    padding: 9px 14px;
+    font-size: 14px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.18s;
+  }
+  .tag-add:active {
+    transform: scale(0.95);
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  .new-tag {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    padding: 10px;
+    border: 1.5px dashed var(--input-border);
+    border-radius: 14px;
+    background: var(--input-bg);
+  }
+  .new-tag input {
+    border: 1.5px solid var(--input-border);
+    background: var(--card);
+    color: var(--ink);
+    border-radius: 12px;
+    padding: 10px 12px;
+    font-size: 15px;
+    font-weight: 600;
+    outline: none;
+    font-family: inherit;
+  }
+  .new-tag input:focus {
+    border-color: var(--accent);
+  }
+  .icon-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .icon-row button {
+    border: 1.5px solid var(--input-border);
+    background: var(--card);
+    border-radius: 10px;
+    padding: 5px 8px;
+    font-size: 16px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s;
+  }
+  .icon-row button.active {
+    border-color: var(--accent);
+    background: var(--accent-tint);
+  }
+  .new-tag-add {
+    align-self: flex-end;
+    border: 0;
+    border-radius: 12px;
+    padding: 9px 16px;
+    font-size: 14px;
+    font-weight: 800;
+    color: #fff;
+    font-family: inherit;
+    background: var(--accent-gradient);
+    cursor: pointer;
+  }
+  .new-tag-add:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+  .delete {
+    width: 100%;
+    margin-top: 10px;
+    padding: 13px;
+    border: 0;
+    border-radius: 14px;
+    font-size: 15px;
+    font-weight: 800;
+    font-family: inherit;
+    color: var(--danger);
+    background: var(--danger-tint);
+    cursor: pointer;
+    transition: transform 0.15s;
+  }
+  .delete:active {
+    transform: scale(0.97);
+  }
   .suggestions {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
     margin-bottom: 14px;
   }
+  .chip-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+  }
   .chip {
     border: 1.5px solid var(--input-border);
     background: var(--input-bg);
     color: var(--ink);
     border-radius: 999px;
-    padding: 8px 14px;
+    padding: 8px 30px 8px 14px;
     font-size: 14px;
     font-weight: 700;
     display: inline-flex;
@@ -354,6 +512,38 @@
   .chip:active {
     background: var(--accent-tint);
     transform: scale(0.96);
+  }
+  .chip-name {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .chip-sub {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .chip-del {
+    position: absolute;
+    right: 3px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    font-size: 10px;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    transition: background 0.15s, color 0.15s;
+  }
+  .chip-del:active {
+    background: var(--danger-tint);
+    color: var(--danger);
   }
   .submit {
     width: 100%;

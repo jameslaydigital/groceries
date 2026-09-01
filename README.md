@@ -80,6 +80,7 @@ await rpc('setChecked', id, true)
 | `listTags`      | —                                      | all tags for this family             |
 | `addTag`        | `{ name, icon? }`                      | the created tag                      |
 | `setItemTags`   | `id, tagIds`                           | item with updated `tag_ids`          |
+| `deleteHistoryItem` | `{ name }`                        | forgets a remembered item            |
 | `ping`          | —                                      | `{ pong }`                           |
 | `snapshot`      | —                                      | `{ categories, items }`              |
 | `listCategories`| —                                      | categories with item counts          |
@@ -89,7 +90,7 @@ await rpc('setChecked', id, true)
 | `setChecked`    | `id, checked`                          | saved item                           |
 | `deleteItem`    | `id`                                   | `{ id }`                             |
 | `clearChecked`  | —                                      | `{ removed }`                        |
-| `suggestions`   | `prefix, limit?`                       | matching item names + categories     |
+| `suggestions`   | `prefix, limit?`                       | matching items from history (ranked by use) + current items |
 
 ## PWA features
 
