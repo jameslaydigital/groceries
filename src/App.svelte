@@ -174,12 +174,10 @@
     {/if}
 
     <header>
-      <div class="titles">
-        <h1>
-          <img class="wordmark" src="/icons/syncart_text.webp" alt="Syncart" />
-        </h1>
-      </div>
       <div class="header-right">
+        <div class="wordmark-container">
+          <img class="wordmark" src="/icons/syncart_text.webp" alt="Syncart" />
+        </div>
         {#if family.name}
           {#if user.families.length > 1}
             <select class="switcher" value={family.subdomain} onchange={(e) => goToFamily(e.target.value)} aria-label="Switch family">
@@ -411,16 +409,16 @@
     gap: 14px;
     animation: fade-down 0.5s ease both;
   }
-  .titles h1 {
-    margin: 0;
-    display: flex;
-    align-items: center;
-    min-height: 34px;
+  .wordmark-container {
+    margin-right: auto;
+    padding: 1em;
+    border-radius: 5px;
   }
   .wordmark {
     height: 30px;
     width: auto;
     display: block;
+    box-shadow: 0 0 15px #fff1;
   }
   @media (prefers-color-scheme: dark) {
     .wordmark {
@@ -430,7 +428,10 @@
   .header-right {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
+    flex-direction: row;
     gap: 10px;
+    width: 100%;
   }
   .install {
     border: 0;
