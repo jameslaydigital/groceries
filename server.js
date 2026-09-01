@@ -172,6 +172,7 @@ const TENANT_MIGRATIONS = [
    CREATE INDEX IF NOT EXISTS idx_item_history_last_used ON item_history(last_used_at);`,
   `ALTER TABLE items ADD COLUMN notes TEXT;
    ALTER TABLE item_history ADD COLUMN notes TEXT;`,
+  `ALTER TABLE item_history ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0;`,
 ]
 
 const DEFAULT_CATEGORIES = [
@@ -1001,7 +1002,7 @@ const methods = {
     // been added through the sheet yet (e.g. seeded ones).
     const fromHistory = db
       .prepare(
-        `SELECT name, quantity, category, tag_ids, notes
+        `SELECT name, quantity, category, tag_ids, notes, favorite
          FROM item_history
          WHERE name_key LIKE ?
          ORDER BY uses DESC, last_used_at DESC
@@ -1023,6 +1024,7 @@ const methods = {
       quantity: r.quantity,
       category: r.category,
       notes: r.notes ?? null,
+      favorite: r.item_id ? 0 : !!r.favorite,
       tag_ids: r.item_id ? tagIdsFor(db, r.item_id) : JSON.parse(r.tag_ids || '[]'),
     }))
   },
@@ -1032,6 +1034,26 @@ const methods = {
     if (!key) throw Object.assign(new Error('Name is required'), { code: 'INVALID_ARGS' })
     ctx.db.prepare('DELETE FROM item_history WHERE name_key = ?').run(key)
     return { deleted: true }
+  },
+
+  setFavorite(ctx, { name, favorite }) {
+    const key = String(name ?? '').trim().toLowerCase()
+    if (!key) throw Object.assign(new Error('Name is required'), { code: 'INVALID_ARGS' })
+    ctx.db.prepare('UPDATE item_history SET favorite = ? WHERE name_key = ?').run(favorite ? 1 : 0, key)
+    return { name: String(name).trim(), favorite: !!favorite }
+  },
+
+  listFavorites(ctx) {
+    return ctx.db
+      .prepare(
+        `SELECT name, quantity, category, tag_ids, notes
+         FROM item_history
+         WHERE favorite = 1
+         ORDER BY last_used_at DESC
+         LIMIT 20`
+      )
+      .all()
+      .map((r) => ({ ...r, tag_ids: JSON.parse(r.tag_ids || '[]') }))
   },
 }
 

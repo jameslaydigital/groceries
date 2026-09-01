@@ -28,10 +28,11 @@ fold the winners into the roadmap when we decide to build them.
 - [ ] **Purchase cadence suggestions** — log when items get checked off; for things you buy regularly, surface "you usually buy X about every N days — it's been longer" based on the average gap between purchases.
 - [ ] **Barcode scan** — camera-to-item lookup for quick adds.
 - [x] **Store aisle / price hints** — optional notes on items (aisle, sale price, preferred brand).
-- [ ] **Favorites / recurring items** — "always have" list (milk, eggs) with one-tap add.
+- [x] **Favorites / recurring items** — star an item in the add sheet to keep it as a one-tap "always have" quick-add.
 - [ ] **Meal planning** — plan dinners; items auto-added to the list.
 - [ ] **Multiple lists** — weekly/dinner lists within a family, alongside the single shared list.
 - [ ] **Sort/group improvements** — manual sort, "add all to Costco trip", per-store export.
+- [ ] **Purchase Link** — link attached to an item that can be followed to add something to an online cart directly (e.g. an amazon page)
 
 ## Offline & sync
 - [ ] **Offline conflict resolution** — explicit conflict badges when an item was edited on two devices, instead of silently converging by idempotency.

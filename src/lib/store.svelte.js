@@ -220,12 +220,13 @@ function sortItems() {
   })
 }
 
-export async function addItem({ name, quantity, category, tag_ids }) {
+export async function addItem({ name, quantity, category, tag_ids, notes }) {
   const pending = {
     id: -Date.now(),
     name,
     quantity,
     category,
+    notes: notes ?? '',
     checked: 0,
     category_icon: categoryIcon(category),
     tag_ids: tag_ids ?? [],
@@ -236,7 +237,7 @@ export async function addItem({ name, quantity, category, tag_ids }) {
   markDirty()
 
   try {
-    const saved = await rpc('addItem', { name, quantity, category, tag_ids: tag_ids ?? [] })
+    const saved = await rpc('addItem', { name, quantity, category, tag_ids: tag_ids ?? [], notes: notes ?? '' })
     // Idempotent reconciliation: a live snapshot may have already inserted
     // the saved item, so remove the pending temp row and only add the real
     // one if it isn't present yet.
@@ -362,6 +363,14 @@ export async function addTag(name, icon) {
     markDirty()
   }
   return tag
+}
+
+export function setFavorite(name, favorite) {
+  return rpc('setFavorite', { name, favorite })
+}
+
+export function listFavorites() {
+  return rpc('listFavorites')
 }
 
 export function tagsById() {

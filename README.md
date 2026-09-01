@@ -81,6 +81,8 @@ await rpc('setChecked', id, true)
 | `addTag`        | `{ name, icon? }`                      | the created tag                      |
 | `setItemTags`   | `id, tagIds`                           | item with updated `tag_ids`          |
 | `deleteHistoryItem` | `{ name }`                        | forgets a remembered item            |
+| `setFavorite`   | `{ name, favorite }`                   | marks/unmarks a remembered item      |
+| `listFavorites` | —                                      | favorite remembered items            |
 | `ping`          | —                                      | `{ pong }`                           |
 | `snapshot`      | —                                      | `{ categories, items }`              |
 | `listCategories`| —                                      | categories with item counts          |

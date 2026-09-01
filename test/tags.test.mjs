@@ -209,3 +209,43 @@ describe('item notes', () => {
     assert.equal(coffee.notes, 'grind on the medium setting')
   })
 })
+
+/* ---------------- favorites / recurring items ---------------- */
+
+describe('favorites', () => {
+  let cookie
+
+  before(async () => {
+    const res = await rpc('home.lvh.me', 'auth.login', [{ email: 'tagadmin@example.com', password: 'hunter2secret' }])
+    cookie = cookieFrom(res.setCookie)
+  })
+
+  it('setFavorite marks an item and listFavorites returns it', async () => {
+    const fav = await rpc('home.lvh.me', 'setFavorite', [{ name: 'Whole Milk', favorite: true }], { cookie })
+    assert.equal(fav.status, 200)
+    assert.equal(fav.json.result.favorite, true)
+
+    const list = await rpc('home.lvh.me', 'listFavorites', [], { cookie })
+    assert.equal(list.status, 200)
+    const milk = list.json.result.find((f) => f.name === 'Whole Milk')
+    assert.ok(milk, 'favorite appears in listFavorites')
+    assert.equal(typeof milk.quantity, 'string')
+  })
+
+  it('suggestions report the favorite flag', async () => {
+    const sug = await rpc('home.lvh.me', 'suggestions', ['wh', 8], { cookie })
+    const milk = sug.json.result.find((s) => s.name === 'Whole Milk')
+    assert.equal(milk.favorite, true)
+  })
+
+  it('unfavoriting removes it from listFavorites', async () => {
+    await rpc('home.lvh.me', 'setFavorite', [{ name: 'Whole Milk', favorite: false }], { cookie })
+    const list = await rpc('home.lvh.me', 'listFavorites', [], { cookie })
+    assert.ok(!list.json.result.some((f) => f.name === 'Whole Milk'))
+  })
+
+  it('setFavorite and listFavorites require auth', async () => {
+    assert.equal((await rpc('home.lvh.me', 'setFavorite', [{ name: 'Whole Milk', favorite: true }])).status, 401)
+    assert.equal((await rpc('home.lvh.me', 'listFavorites', [])).status, 401)
+  })
+})

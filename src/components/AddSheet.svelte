@@ -1,5 +1,5 @@
 <script>
-  import { addItem, updateItem, removeItem, addTag, data, ui, categoryIcon, toast } from '../lib/store.svelte.js'
+  import { addItem, updateItem, removeItem, addTag, setFavorite, listFavorites, data, ui, categoryIcon, toast } from '../lib/store.svelte.js'
   import rpc from '../lib/rpc.js'
 
   let { open = $bindable(false) } = $props()
@@ -10,6 +10,7 @@
   let selectedTags = $state([])
   let editingId = $state(null)
   let suggestions = $state([])
+  let favorites = $state([])
   let busy = $state(false)
   let input = $state(null)
   let addingTag = $state(false)
@@ -18,6 +19,14 @@
 
   let categories = $derived(data.categories)
   let tags = $derived(data.tags)
+
+  $effect(() => {
+    if (open && !editingId) {
+      listFavorites()
+        .then((rows) => (favorites = rows))
+        .catch(() => {})
+    }
+  })
 
   $effect(() => {
     if (ui.editing) {
@@ -81,7 +90,41 @@
     try {
       await rpc('deleteHistoryItem', { name: s.name })
       suggestions = suggestions.filter((x) => x.name !== s.name)
+      favorites = favorites.filter((x) => x.name !== s.name)
       toast(`Forgot "${s.name}"`, '🗑️')
+    } catch (e) {
+      toast(e.message, '⚠️')
+    }
+  }
+
+  async function quickAdd(f) {
+    try {
+      await addItem({ name: f.name, quantity: f.quantity || '1', category: f.category, notes: f.notes ?? '', tag_ids: f.tag_ids ?? [] })
+      toast(`Added ${f.name}`, '🛒')
+    } catch (e) {
+      toast(e.message, '⚠️')
+    }
+  }
+
+  async function unfav(f) {
+    try {
+      await setFavorite(f.name, false)
+      favorites = favorites.filter((x) => x.name !== f.name)
+    } catch (e) {
+      toast(e.message, '⚠️')
+    }
+  }
+
+  async function toggleFavSuggestion(s) {
+    try {
+      const res = await setFavorite(s.name, !s.favorite)
+      s.favorite = res.favorite
+      if (res.favorite) {
+        const rows = await listFavorites().catch(() => favorites)
+        favorites = rows
+      } else {
+        favorites = favorites.filter((x) => x.name !== s.name)
+      }
     } catch (e) {
       toast(e.message, '⚠️')
     }
@@ -155,6 +198,23 @@
         {/if}
       </div>
 
+      {#if favorites.length && !editingId}
+        <div class="favorites">
+          <span class="label">Favorites</span>
+          <div class="fav-row">
+            {#each favorites as f (f.name)}
+              <span class="chip-wrap">
+                <button class="chip" onclick={() => quickAdd(f)}>
+                  <span>⭐</span>
+                  <span class="chip-name">{f.name}</span>
+                </button>
+                <button class="chip-del" onclick={() => unfav(f)} aria-label={`Unfavorite ${f.name}`}>✕</button>
+              </span>
+            {/each}
+          </div>
+        </div>
+      {/if}
+
       {#if suggestions.length && !editingId}
         <div class="suggestions">
           {#each suggestions as s (s.name)}
@@ -164,7 +224,15 @@
                 <span class="chip-name">{s.name}</span>
                 <span class="chip-sub">{s.quantity}</span>
               </button>
-              <button class="chip-del" onclick={() => forget(s)} aria-label={`Forget ${s.name}`}>✕</button>
+              <button
+                class="chip-del"
+                class:on={s.favorite}
+                onclick={() => toggleFavSuggestion(s)}
+                aria-label={s.favorite ? `Unfavorite ${s.name}` : `Favorite ${s.name}`}
+              >
+                {s.favorite ? '★' : '☆'}
+              </button>
+              <button class="chip-del forget" onclick={() => forget(s)} aria-label={`Forget ${s.name}`}>✕</button>
             </span>
           {/each}
         </div>
@@ -510,7 +578,7 @@
     background: var(--input-bg);
     color: var(--ink);
     border-radius: 999px;
-    padding: 8px 30px 8px 14px;
+    padding: 8px 54px 8px 14px;
     font-size: 14px;
     font-weight: 700;
     display: inline-flex;
@@ -537,7 +605,7 @@
   }
   .chip-del {
     position: absolute;
-    right: 3px;
+    right: 24px;
     top: 50%;
     transform: translateY(-50%);
     border: 0;
@@ -552,9 +620,27 @@
     place-items: center;
     transition: background 0.15s, color 0.15s;
   }
+  .chip-del.on {
+    color: #f59e0b;
+  }
+  .chip-del.forget {
+    right: 3px;
+  }
   .chip-del:active {
     background: var(--danger-tint);
     color: var(--danger);
+  }
+  .favorites {
+    margin-bottom: 12px;
+  }
+  .favorites .label {
+    display: block;
+    margin-bottom: 7px;
+  }
+  .fav-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
   }
   .submit {
     width: 100%;
