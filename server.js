@@ -1090,7 +1090,7 @@ async function serveStatic(req, res, pathname) {
   }
   try {
     const body = await readFile(file)
-    const noCache = file.includes('index.html') || file.includes('sw.js') || file.endsWith('.webmanifest')
+    const noCache = file.includes('index.html') || file.includes('sw.js') || file.endsWith('.webmanifest') || rel.startsWith('/icons/')
     res.writeHead(200, {
       'Content-Type': MIME[extname(file).toLowerCase()] || 'application/octet-stream',
       'Cache-Control': noCache ? 'no-cache' : 'public, max-age=31536000, immutable',

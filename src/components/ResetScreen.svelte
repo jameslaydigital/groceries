@@ -60,7 +60,7 @@
 
   <div class="card">
     <div class="brand">
-      <span class="logo">🔑</span>
+      <img class="logo" src="/icons/logo.webp" alt="Syncart" />
       <h1>Reset your password</h1>
       {#if info}
         <p class="family">{info.email}</p>
@@ -173,9 +173,16 @@
     margin-bottom: 22px;
   }
   .logo {
-    font-size: 40px;
-    display: inline-block;
+    width: 84px;
+    height: 84px;
+    margin: 0 auto;
+    display: block;
     filter: drop-shadow(0 4px 8px rgba(16, 185, 129, 0.35));
+  }
+  @media (prefers-color-scheme: dark) {
+    .logo {
+      filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4)) brightness(1.15);
+    }
   }
   h1 {
     margin: 6px 0 0;
