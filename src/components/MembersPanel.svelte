@@ -32,7 +32,7 @@
       const labels = host.split('.')
       newHost = labels.length > 2 ? `${family.subdomain}.${labels.slice(1).join('.')}` : `${family.subdomain}.${host}`
     }
-    return `${window.location.protocol}//${newHost}${port}${window.location.pathname}`
+    return `${window.location.protocol}//${newHost}${port}${window.location.pathname.replace(/\/+$/, '')}`
   })
 
   function inviteLink(token) {
