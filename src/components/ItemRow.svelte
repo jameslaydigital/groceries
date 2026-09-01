@@ -70,6 +70,9 @@
       <div class="texts">
         <span class="name">{item.name}</span>
         <span class="qty" class:done={item.checked}>{item.quantity}</span>
+        {#if item.notes}
+          <span class="note">{item.notes}</span>
+        {/if}
       </div>
       {#if badges.length}
         <span class="badges" aria-label="Stores">
@@ -207,6 +210,14 @@
     font-weight: 600;
     color: var(--accent-soft);
     transition: color 0.25s;
+  }
+  .note {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .badges {
     display: inline-flex;

@@ -170,3 +170,42 @@ describe('item history & suggestions', () => {
     assert.equal(del.status, 401)
   })
 })
+
+/* ---------------- item notes (aisle / price hints) ---------------- */
+
+describe('item notes', () => {
+  let cookie
+
+  before(async () => {
+    const res = await rpc('home.lvh.me', 'auth.login', [{ email: 'tagadmin@example.com', password: 'hunter2secret' }])
+    cookie = cookieFrom(res.setCookie)
+  })
+
+  it('addItem stores notes and snapshot includes them', async () => {
+    const added = await rpc('home.lvh.me', 'addItem', [{ name: 'Coffee Beans', quantity: '1', category: 'Pantry', notes: 'Aisle 3, buy the medium roast' }], { cookie })
+    assert.equal(added.status, 200)
+    assert.equal(added.json.result.notes, 'Aisle 3, buy the medium roast')
+
+    const snap = await rpc('home.lvh.me', 'snapshot', [], { cookie })
+    const coffee = snap.json.result.items.find((i) => i.name === 'Coffee Beans')
+    assert.equal(coffee.notes, 'Aisle 3, buy the medium roast')
+  })
+
+  it('updateItem can set and clear notes', async () => {
+    const snap = await rpc('home.lvh.me', 'snapshot', [], { cookie })
+    const coffee = snap.json.result.items.find((i) => i.name === 'Coffee Beans')
+
+    const set = await rpc('home.lvh.me', 'updateItem', [coffee.id, { notes: '2 for $12' }], { cookie })
+    assert.equal(set.json.result.notes, '2 for $12')
+
+    const clear = await rpc('home.lvh.me', 'updateItem', [coffee.id, { notes: '' }], { cookie })
+    assert.equal(clear.json.result.notes, null)
+  })
+
+  it('suggestions carry notes from history', async () => {
+    await rpc('home.lvh.me', 'addItem', [{ name: 'Coffee Beans', quantity: '1', category: 'Pantry', notes: 'grind on the medium setting' }], { cookie })
+    const sug = await rpc('home.lvh.me', 'suggestions', ['cof', 8], { cookie })
+    const coffee = sug.json.result.find((s) => s.name === 'Coffee Beans')
+    assert.equal(coffee.notes, 'grind on the medium setting')
+  })
+})

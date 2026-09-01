@@ -6,6 +6,7 @@
   let name = $state('')
   let quantity = $state('1')
   let category = $state('Produce')
+  let notes = $state('')
   let selectedTags = $state([])
   let editingId = $state(null)
   let suggestions = $state([])
@@ -24,6 +25,7 @@
       name = ui.editing.name
       quantity = ui.editing.quantity
       category = ui.editing.category
+      notes = ui.editing.notes ?? ''
       selectedTags = ui.editing.tag_ids ?? []
       suggestions = []
     }
@@ -34,6 +36,7 @@
       name = ''
       quantity = '1'
       category = 'Produce'
+      notes = ''
       selectedTags = []
     }
   })
@@ -69,6 +72,7 @@
     name = s.name
     quantity = s.quantity || '1'
     category = s.category
+    notes = s.notes ?? ''
     selectedTags = s.tag_ids ?? []
     suggestions = []
   }
@@ -112,14 +116,16 @@
         name: n,
         quantity: quantity.trim() || '1',
         category,
+        notes: notes.trim() || '',
         tag_ids: selectedTags,
       })
       ui.editing = null
       open = false
     } else {
-      await addItem({ name: n, quantity: quantity.trim() || '1', category, tag_ids: selectedTags })
+      await addItem({ name: n, quantity: quantity.trim() || '1', category, notes: notes.trim() || '', tag_ids: selectedTags })
       name = ''
       quantity = '1'
+      notes = ''
       input?.focus()
     }
     busy = false
@@ -178,6 +184,11 @@
       <label class="field">
         <span class="label">Qty</span>
         <input bind:value={quantity} placeholder="2" inputmode="text" autocomplete="off" />
+      </label>
+
+      <label class="field">
+        <span class="label">Notes</span>
+        <input bind:value={notes} placeholder="Aisle, price, brand… (optional)" autocomplete="off" />
       </label>
 
       <div class="field">

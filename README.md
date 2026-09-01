@@ -85,8 +85,8 @@ await rpc('setChecked', id, true)
 | `snapshot`      | —                                      | `{ categories, items }`              |
 | `listCategories`| —                                      | categories with item counts          |
 | `listItems`     | —                                      | sorted items joined with icons       |
-| `addItem`       | `{ name, quantity, category }`         | saved item                           |
-| `updateItem`    | `id, { name?, quantity?, category?, checked? }` | saved item                  |
+| `addItem`       | `{ name, quantity, category, notes?, tag_ids? }` | saved item                  |
+| `updateItem`    | `id, { name?, quantity?, category?, notes?, checked? }` | saved item         |
 | `setChecked`    | `id, checked`                          | saved item                           |
 | `deleteItem`    | `id`                                   | `{ id }`                             |
 | `clearChecked`  | —                                      | `{ removed }`                        |

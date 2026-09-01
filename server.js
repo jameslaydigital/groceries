@@ -170,6 +170,8 @@ const TENANT_MIGRATIONS = [
      last_used_at TEXT NOT NULL DEFAULT (datetime('now'))
    );
    CREATE INDEX IF NOT EXISTS idx_item_history_last_used ON item_history(last_used_at);`,
+  `ALTER TABLE items ADD COLUMN notes TEXT;
+   ALTER TABLE item_history ADD COLUMN notes TEXT;`,
 ]
 
 const DEFAULT_CATEGORIES = [
@@ -467,7 +469,7 @@ const listCategories = (db) =>
 
 const listItems = (db) =>
   db.prepare(`
-    SELECT i.id, i.name, i.quantity, i.category, i.checked,
+    SELECT i.id, i.name, i.quantity, i.category, i.checked, i.notes,
            c.icon AS category_icon, c.sort_order AS category_order
     FROM items i
     JOIN categories c ON c.name = i.category
@@ -500,20 +502,21 @@ function tagIdsFor(db, itemId) {
 // Keep a "you've added this before" memory per item so the add sheet can
 // dial in past items. The history is keyed by normalized name and bumped on
 // every add so the most-used items surface first.
-function rememberItem(db, name, quantity, category, tagIds) {
+function rememberItem(db, name, quantity, category, tagIds, notes) {
   const key = String(name ?? '').trim().toLowerCase()
   if (!key) return
   db.prepare(
-    `INSERT INTO item_history (name_key, name, quantity, category, tag_ids, uses, last_used_at)
-     VALUES (?, ?, ?, ?, ?, 1, datetime('now'))
+    `INSERT INTO item_history (name_key, name, quantity, category, tag_ids, notes, uses, last_used_at)
+     VALUES (?, ?, ?, ?, ?, ?, 1, datetime('now'))
      ON CONFLICT(name_key) DO UPDATE SET
        name = excluded.name,
        quantity = excluded.quantity,
        category = excluded.category,
        tag_ids = excluded.tag_ids,
+       notes = excluded.notes,
        uses = uses + 1,
        last_used_at = datetime('now')`
-  ).run(key, String(name).trim(), String(quantity ?? '1').trim() || '1', String(category ?? 'Other').trim() || 'Other', JSON.stringify(tagIds ?? []))
+  ).run(key, String(name).trim(), String(quantity ?? '1').trim() || '1', String(category ?? 'Other').trim() || 'Other', JSON.stringify(tagIds ?? []), String(notes ?? '').trim() || null)
 }
 
 // Filter tag ids down to ones that still exist, so stale history can't trip
@@ -602,7 +605,8 @@ function handleEvents(req, res) {
 const getItem = (db) => db.prepare('SELECT * FROM items WHERE id = ?')
 const addItemStmt = (db) =>
   db.prepare(
-    'INSERT INTO items (name, quantity, category, position) VALUES (?, ?, ?, COALESCE((SELECT MAX(position) + 1 FROM items), 0))'
+    `INSERT INTO items (name, quantity, category, position, notes)
+     VALUES (?, ?, ?, COALESCE((SELECT MAX(position) + 1 FROM items), 0), ?)`
   )
 const updateItemStmt = (db) =>
   db.prepare(
@@ -912,24 +916,25 @@ const methods = {
     return snapshotOf(ctx.db)
   },
 
-  addItem(ctx, { name, quantity, category, tag_ids }) {
+  addItem(ctx, { name, quantity, category, tag_ids, notes }) {
     const db = ctx.db
     const n = String(name ?? '').trim()
     if (!n) throw Object.assign(new Error('Name is required'), { code: 'INVALID_ARGS' })
     const qty = String(quantity ?? '1').trim() || '1'
     const cat = String(category ?? 'Other').trim() || 'Other'
     const cleanTags = validTagIds(db, tag_ids)
+    const note = String(notes ?? '').trim() || null
 
     if (!catExists(db).get(cat)) {
       db.prepare('INSERT INTO categories (name) VALUES (?)').run(cat)
     }
 
-    const info = addItemStmt(db).run(n, qty, cat)
+    const info = addItemStmt(db).run(n, qty, cat, note)
     const id = info.lastInsertRowid
     if (cleanTags.length) {
       replaceItemTags(db, id, cleanTags)
     }
-    rememberItem(db, n, qty, cat, cleanTags)
+    rememberItem(db, n, qty, cat, cleanTags, note)
     return withTagIds(db, [getItem(db).get(id)])[0]
   },
 
@@ -953,8 +958,18 @@ const methods = {
     if (Array.isArray(patch.tag_ids)) {
       replaceItemTags(db, id, validTagIds(db, patch.tag_ids))
     }
+    if (patch.notes !== undefined) {
+      db.prepare("UPDATE items SET notes = ?, updated_at = datetime('now') WHERE id = ?").run(String(patch.notes).trim() || null, id)
+    }
     if (name) {
-      rememberItem(db, name, quantity ?? existing.quantity, category ?? existing.category, validTagIds(db, Array.isArray(patch.tag_ids) ? patch.tag_ids : tagIdsFor(db, id)))
+      rememberItem(
+        db,
+        name,
+        quantity ?? existing.quantity,
+        category ?? existing.category,
+        validTagIds(db, Array.isArray(patch.tag_ids) ? patch.tag_ids : tagIdsFor(db, id)),
+        patch.notes !== undefined ? patch.notes : existing.notes
+      )
     }
     return withTagIds(db, [getItem(db).get(id)])[0]
   },
@@ -986,7 +1001,7 @@ const methods = {
     // been added through the sheet yet (e.g. seeded ones).
     const fromHistory = db
       .prepare(
-        `SELECT name, quantity, category, tag_ids
+        `SELECT name, quantity, category, tag_ids, notes
          FROM item_history
          WHERE name_key LIKE ?
          ORDER BY uses DESC, last_used_at DESC
@@ -995,7 +1010,7 @@ const methods = {
       .all(`${q}%`, lim)
     const fromItems = db
       .prepare(
-        `SELECT i.name, i.quantity, i.category, i.id AS item_id
+        `SELECT i.name, i.quantity, i.category, i.notes, i.id AS item_id
          FROM items i
          LEFT JOIN item_history h ON h.name_key = LOWER(TRIM(i.name))
          WHERE LOWER(i.name) LIKE ? AND h.name_key IS NULL
@@ -1007,6 +1022,7 @@ const methods = {
       name: r.name,
       quantity: r.quantity,
       category: r.category,
+      notes: r.notes ?? null,
       tag_ids: r.item_id ? tagIdsFor(db, r.item_id) : JSON.parse(r.tag_ids || '[]'),
     }))
   },

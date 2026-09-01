@@ -10,6 +10,14 @@ fold the winners into the roadmap when we decide to build them.
 - [ ] **Invite/share sheet** — native share sheet / QR code for the invite link, plus a "copy invite link" action right after inviting.
 - [ ] **Role management** — promote/demote admins, leave-family, remove a member.
 - [ ] **Per-subdomain sessions** — scope the session cookie to the subdomain and hop with a short-lived signed switch token, instead of one parent-domain cookie (threat-model hardening).
+- [ ] **Transactional Email** — To allow self-serve sign-up.
+- [ ] **Transactional SMS** — Another factor for authentication.
+- [ ] **OTP Authentication** — Another factor for authentication.
+- [ ] **Passkey Authentication** — Another path to authentication.
+
+## Business preparation
+- [ ] **Payment Integration** — To allow people to provision their own families / tenants.
+- [ ] **App Store Preparation** — To allow people to install straight from the play store or apple store.
 
 ## Shopping UX
 - [ ] **Item attribution** — record which member added/checked each item ("James added milk").
@@ -19,7 +27,7 @@ fold the winners into the roadmap when we decide to build them.
 - [x] **Direct item delete** — a clear "Delete item" button in the edit sheet (plus the existing swipe-to-delete), so removing an item doesn't require digging through the modal.
 - [ ] **Purchase cadence suggestions** — log when items get checked off; for things you buy regularly, surface "you usually buy X about every N days — it's been longer" based on the average gap between purchases.
 - [ ] **Barcode scan** — camera-to-item lookup for quick adds.
-- [ ] **Store aisle / price hints** — optional notes on items (aisle, sale price, preferred brand).
+- [x] **Store aisle / price hints** — optional notes on items (aisle, sale price, preferred brand).
 - [ ] **Favorites / recurring items** — "always have" list (milk, eggs) with one-tap add.
 - [ ] **Meal planning** — plan dinners; items auto-added to the list.
 - [ ] **Multiple lists** — weekly/dinner lists within a family, alongside the single shared list.
