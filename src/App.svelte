@@ -65,13 +65,6 @@
   })
 
   let checkedCount = $derived(items.filter((i) => i.checked).length)
-  let subtitle = $derived(
-    total === 0
-      ? 'Nothing yet — add your first item below'
-      : pending === 0
-        ? 'All done! Time to check out 🎉'
-        : `${pending} item${pending === 1 ? '' : 's'} to grab`
-  )
 
   let deferred
 
@@ -185,7 +178,6 @@
         <h1>
           <img class="wordmark" src="/icons/syncart_text.webp" alt="Syncart" />
         </h1>
-        <p>{subtitle}</p>
       </div>
       <div class="header-right">
         {#if family.name}
@@ -434,12 +426,6 @@
     .wordmark {
       filter: brightness(1.28);
     }
-  }
-  .titles p {
-    margin: 3px 0 0;
-    font-size: 14.5px;
-    font-weight: 600;
-    color: var(--muted);
   }
   .header-right {
     display: flex;
