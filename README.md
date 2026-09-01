@@ -12,6 +12,7 @@ npm run dev:all     # backend on :8787 + Vite dev server on :5173 (hot reload)
 npm run dev         # Vite only on :5173 (expects a backend already on :8787)
 npm run build       # production build into dist/
 npm start           # serves dist/ + the RPC API on :8787
+npm run deploy      # rsync → build → restart the live box (add --push to push first, -m "msg" to commit too)
 npm run backup      # snapshot platform.db + every family DB into backups/
 ```
 

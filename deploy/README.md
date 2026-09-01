@@ -5,6 +5,10 @@ Caddy terminates TLS/reverse-proxies, and a cron takes nightly SQLite backups.
 No containers — the app has zero runtime npm dependencies (`node:sqlite` is
 built into Node).
 
+Build and deploy the app:
+
+    rsync -avz <project dir> syncart:/opt/syncart
+
 ## 1. Provision the Linode
 
 - A `g6-nanode-1gb` (1 vCPU / 1GB / 25GB, ~$5/mo) is plenty.
@@ -117,7 +121,7 @@ retaining the newest `KEEP_BACKUPS`. Manually: `npm run backup`.
 
 ## 7. Day-to-day
 
-- **Deploy an update:** `git pull && npm ci && npm run build && sudo systemctl restart syncart`
+- **Deploy an update:** from the repo, `npm run deploy -- --push` (commit-then-push with `-m "msg"`, or just `npm run deploy` to sync the working tree). The box can't `git pull` from the laptop-only `jldgithub` alias, so the script rsyncs the repo over, builds, and restarts `syncart.service`.
 - **Provision a family:** `node scripts/create-family.mjs create james "The James Family"`
 - **Known test login:** `node scripts/setup.mjs` (creates/resets `dev@example.com` / `devpassword` on the default family).
 

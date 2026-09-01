@@ -13,6 +13,7 @@
     "user": "node scripts/create-user.mjs",
     "seed": "node scripts/seed.mjs",
     "setup": "node scripts/setup.mjs",
+    "deploy": "node scripts/deploy.mjs",
     "backup": "node scripts/backup.mjs",
     "test": "node --test --test-force-exit"
   },
