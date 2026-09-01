@@ -23,6 +23,15 @@ const THEME_KEY = 'groceries.theme'
 export const THEMES = ['market', 'ocean', 'berry', 'sunset']
 export const theme = $state({ name: 'market' })
 
+// Quiet, desaturated status-bar tones per theme — the bright accent was
+// drawing too much attention in the Android titlebar.
+const STATUS_COLORS = {
+  market: '#2f4a3c',
+  ocean: '#23465c',
+  berry: '#4a2d52',
+  sunset: '#59381f',
+}
+
 function readTheme() {
   try {
     const t = localStorage.getItem(THEME_KEY)
@@ -35,6 +44,14 @@ function readTheme() {
 function setDomTheme(name) {
   if (typeof document === 'undefined') return
   document.documentElement.dataset.theme = name === 'market' ? '' : name
+  const color = STATUS_COLORS[name] || STATUS_COLORS.market
+  let meta = document.querySelector('meta[name="theme-color"]')
+  if (!meta) {
+    meta = document.createElement('meta')
+    meta.setAttribute('name', 'theme-color')
+    document.head.appendChild(meta)
+  }
+  meta.setAttribute('content', color)
 }
 
 export function applyTheme(name) {
