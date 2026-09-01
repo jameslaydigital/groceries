@@ -144,7 +144,7 @@ retaining the newest `KEEP_BACKUPS`. Manually: `npm run backup`.
 | Access | `ssh syncart` (laptop `~/.ssh/config` → user `deploy`, key `~/.ssh/id_syncart_deploy`) |
 | App | `/opt/syncart`, built, `systemd` unit `syncart.service`, binds `127.0.0.1:8787` |
 | Proxy | Caddy 2.6.2 (apt), reverse-proxies `:80` → `127.0.0.1:8787`. Interim Caddyfile is a plain `:80` proxy (no TLS yet). |
-| Data dir | `/opt/syncart/families` + `/opt/syncart/platform.db` (no env override; defaults) |
+| Data dir | `/var/lib/syncart/` (`families/` + `platform.db`), set via `/opt/syncart/.env` — outside the deployed tree so deploys can't touch it |
 | Known login | `dev@example.com` / `devpassword` (admin of `home`), from `npm run setup` |
 
 **Security posture (applied):** root SSH disabled (`PermitRootLogin no`),
