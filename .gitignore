@@ -34,4 +34,7 @@ families/
 # Database backups
 backups/
 
+# Source logo (master art for re-rendering icons) — not deployed
+public/icons/logo_original.png
+
 deploy/.env

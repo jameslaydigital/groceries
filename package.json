@@ -9,7 +9,6 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "node server.js",
-    "icons": "node scripts/gen-icons.mjs",
     "family": "node scripts/create-family.mjs",
     "user": "node scripts/create-user.mjs",
     "seed": "node scripts/seed.mjs",

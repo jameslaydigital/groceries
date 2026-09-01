@@ -96,7 +96,7 @@ await rpc('setChecked', id, true)
 
 ## PWA features
 
-- Installable (`manifest.webmanifest`, generated icons via `npm run icons`)
+- Installable (`manifest.webmanifest`, icons in `public/icons/` rendered from `public/icons/logo_original.png`)
 - Offline-first: app shell + assets cached by a service worker, list state persisted locally, mutations queued and synced on reconnect
 - Cache-busted every build: the SW cache name is versioned per build, and `sw.js`/`index.html`/manifest are served `no-cache`
 
@@ -109,7 +109,7 @@ src/lib/rpc.js             rpc() client + offline queue
 src/lib/store.svelte.js    Svelte 5 runes store, optimistic updates, local persistence
 src/App.svelte             shell: header + progress ring, search, category chips, list, FAB
 src/components/            ItemRow (delete + undo), AddSheet (bottom sheet), ProgressRing
-public/manifest.webmanifest, public/sw.js, scripts/gen-icons.mjs
+public/manifest.webmanifest, public/sw.js
 ```
 
 ## Tests
@@ -128,4 +128,4 @@ Runs the `node:test` suite (no deps).
 ## Notes
 
 - Defaults to port **8787** (`PORT=...` to override) because 3000 was taken on this machine; update `vite.config.js` if you change it.
-- Icons are drawn programmatically (pure-Node PNG encoder) — tweak `scripts/gen-icons.mjs` and re-run `npm run icons`.
+- App icons live in `public/icons/`; the source art is `public/icons/logo_original.png` (gitignored) — render new resolutions from that and drop them in the same dir.
