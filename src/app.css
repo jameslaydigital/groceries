@@ -81,6 +81,42 @@
   }
 }
 
+/* --- alternate colorways (themes) -------------------------------- */
+/* Each overrides the accent family; neutrals still follow light/dark. */
+html[data-theme='ocean'] {
+  --accent: #0284c7;
+  --accent-strong: #0369a1;
+  --accent-gradient: linear-gradient(135deg, #0ea5e9, #0284c7);
+  --accent-tint: rgba(14, 165, 233, 0.12);
+  --accent-glow: rgba(14, 165, 233, 0.32);
+  --accent-soft: #0284c7;
+  --focus-ring: rgba(14, 165, 233, 0.16);
+  --ring-fg: var(--accent-strong);
+  --marker: #bae6fd;
+}
+html[data-theme='berry'] {
+  --accent: #c026d3;
+  --accent-strong: #a21caf;
+  --accent-gradient: linear-gradient(135deg, #e879f9, #c026d3);
+  --accent-tint: rgba(192, 38, 211, 0.12);
+  --accent-glow: rgba(192, 38, 211, 0.32);
+  --accent-soft: #c026d3;
+  --focus-ring: rgba(192, 38, 211, 0.16);
+  --ring-fg: var(--accent-strong);
+  --marker: #f5d0fe;
+}
+html[data-theme='sunset'] {
+  --accent: #ea580c;
+  --accent-strong: #c2410c;
+  --accent-gradient: linear-gradient(135deg, #fb923c, #ea580c);
+  --accent-tint: rgba(234, 88, 12, 0.12);
+  --accent-glow: rgba(234, 88, 12, 0.32);
+  --accent-soft: #ea580c;
+  --focus-ring: rgba(234, 88, 12, 0.16);
+  --ring-fg: var(--accent-strong);
+  --marker: #fed7aa;
+}
+
 * {
   box-sizing: border-box;
 }

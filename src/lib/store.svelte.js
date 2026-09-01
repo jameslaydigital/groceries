@@ -18,6 +18,41 @@ export const ui = $state({
 })
 
 const AUTH_KEY = 'groceries.auth'
+const THEME_KEY = 'groceries.theme'
+
+export const THEMES = ['market', 'ocean', 'berry', 'sunset']
+export const theme = $state({ name: 'market' })
+
+function readTheme() {
+  try {
+    const t = localStorage.getItem(THEME_KEY)
+    return THEMES.includes(t) ? t : 'market'
+  } catch {
+    return 'market'
+  }
+}
+
+function setDomTheme(name) {
+  if (typeof document === 'undefined') return
+  document.documentElement.dataset.theme = name === 'market' ? '' : name
+}
+
+export function applyTheme(name) {
+  const t = THEMES.includes(name) ? name : 'market'
+  theme.name = t
+  setDomTheme(t)
+  try {
+    localStorage.setItem(THEME_KEY, t)
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+export function initTheme() {
+  const t = readTheme()
+  theme.name = t
+  setDomTheme(t)
+}
 
 function persistAuth(status) {
   try {

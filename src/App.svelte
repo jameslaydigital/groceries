@@ -7,7 +7,7 @@
   import AuthScreen from './components/AuthScreen.svelte'
   import InviteScreen from './components/InviteScreen.svelte'
   import ResetScreen from './components/ResetScreen.svelte'
-  import { data, ui, load, clearChecked, toast, family, user, auth, logout } from './lib/store.svelte.js'
+  import { data, ui, load, clearChecked, toast, family, user, auth, logout, theme, applyTheme, THEMES } from './lib/store.svelte.js'
   import { connectRealtime, disconnectRealtime } from './lib/realtime.js'
   import rpc from './lib/rpc.js'
 
@@ -129,6 +129,13 @@
     }
     window.location.href = `${window.location.protocol}//${newHost}${port}${window.location.pathname}`
   }
+
+  function cycleTheme() {
+    const i = THEMES.indexOf(theme.name)
+    const next = THEMES[(i + 1) % THEMES.length]
+    applyTheme(next)
+    toast(next === 'market' ? 'Market theme' : `${next[0].toUpperCase()}${next.slice(1)} theme`, '🎨')
+  }
 </script>
 
 {#if (inviteToken || resetToken) && auth.status !== 'authed'}
@@ -179,6 +186,7 @@
           {/if}
         {/if}
         {#if user.id}
+          <button class="logout" onclick={cycleTheme} aria-label="Change theme" title="Theme">{theme.name === 'market' ? '🎨' : '🎨'}</button>
           <button class="logout" onclick={() => (showMembers = true)} aria-label="Members" title="Members">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
