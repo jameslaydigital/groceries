@@ -15,7 +15,8 @@ The current `server.js` opened a single `groceries.db` at startup and every RPC 
 - **`families/<subdomain>.db`** (per tenant): categories, items, tags, item_tags
 
 **Tenant resolution:**
-- Read `Host` header (`james.lvh.me:8787` → subdomain `james`). lvh.me resolves every subdomain to `127.0.0.1` for local dev.
+- The tenant key is the **leftmost label** of the `Host` header — base-domain agnostic, so `james.lvh.me`, `james.progressive-apps.com`, or `james.any-domain.net` all resolve to the `james` family with no configuration.
+- `localhost`/loopback and `DEFAULT_HOSTS` env (bare IPs before DNS is wired) map to the default (`home`) family. Unknown labels → `NO_FAMILY`.
 - Look up the family in `platform.db`; lazily open (and cache) that family's sqlite file.
 - Migrations per tenant DB tracked via `PRAGMA user_version`.
 - Vite's dev proxy preserves the original `Host` header, so `james.lvh.me:5173` → `/rpc` proxy to `:8787` still carries `james.lvh.me`.
@@ -23,7 +24,7 @@ The current `server.js` opened a single `groceries.db` at startup and every RPC 
 **Dispatcher refactor:**
 - RPC handlers stop using the global `db`; the dispatcher builds a `ctx = { db, family, user }` per request and passes it in. Same `rpc()` shape on the client — no frontend breakage.
 
-**New RPC:** `meta` → `{ family: { name, subdomain }, user, families }`.
+**New RPC:** `meta` → `{ family: { name, subdomain }, user, role, families, bootstrap }`.
 
 ---
 
@@ -33,7 +34,9 @@ The current `server.js` opened a single `groceries.db` at startup and every RPC 
 - Sessions: random 256-bit tokens in a `sessions` table; delivered as **httpOnly, `SameSite=Lax`** cookies.
 - Cookie domain = parent domain (`.lvh.me` in dev) so a multi-family user switches families smoothly; the **membership check is the real security boundary** (the token only ever grants access to families the user belongs to). *Hardening option: scope the cookie per-subdomain and hop via a short-lived signed switch token — noted in Phase 4.*
 - Onboarding: first user of an empty family becomes **admin**; admins invite others via secure one-time links (`/invite/accept/<token>`, 256-bit tokens, single-use, revocable).
-- RPC: `auth.signup` (takes an invite `token` for private families), `auth.login`, `auth.logout`, `auth.invite` (returns a token), `auth.inviteInfo`, `revokeInvite`, `listMembers`, and `meta` reports `{ user, role, families, bootstrap }`.
+- **Members panel** (`src/components/MembersPanel.svelte`): roster with admin badges, invite-by-email form, pending-invite management (copy link / revoke), and admin-minted password-reset links.
+- **Password reset** — admins mint a one-time `/reset/<token>` link (24h) per member; the member sets a new password and all their sessions are invalidated. No self-serve reset yet (no email delivery).
+- RPC: `auth.signup` (takes an invite `token` for private families), `auth.login`, `auth.logout`, `auth.invite` (returns a token), `auth.inviteInfo`, `auth.resetPasswordLink`, `auth.resetPasswordInfo`, `auth.resetPassword`, `revokeInvite`, `listMembers`, and `meta` reports `{ user, role, families, bootstrap }`.
 - Guard middleware rejects every other RPC method when there's no valid session + membership for the current family (401 / 403).
 - Families with no members are "bootstrap mode" (open) until the first person signs up.
 
@@ -70,12 +73,31 @@ Shop by store — Costco / Trader Joe's / Smith's.
 - ✅ **Backups** — `npm run backup` snapshots `platform.db` + every tenant DB via `VACUUM INTO` into timestamped `backups/` dirs.
 - ✅ **Session hardening** — only a sha256 hash of the session token is stored; sessions expire after 30 days and are rejected when expired.
 - ✅ **Cookie flags** — `HttpOnly`, `SameSite=Lax`; `Secure` when `COOKIE_SECURE=1`.
-- ⏳ **Deployment** — real domain + subdomains and HTTPS (required for the PWA + `Secure` cookies). Run with `COOKIE_SECURE=1` behind TLS. Optionally swap the in-memory SSE broadcast for pub/sub if scaling to multiple processes.
+- ✅ **Live deployment** — native Linode box behind Caddy, real wildcard domain (`*.progressive-apps.com` → `23.239.29.165`), systemd unit + nightly `VACUUM INTO` backups. App is bound to loopback; only Caddy reaches it.
+- ⏳ **HTTPS/TLS** — still serving plain HTTP (interim `:80` Caddy proxy). Needs the Caddy binary built with the Linode DNS module for a wildcard cert, then `COOKIE_SECURE=1` + `COOKIE_DOMAIN=.progressive-apps.com`. Required for the PWA install prompt and secure cookies.
+- ⏳ **Self-serve password reset** — currently only admins can mint reset links; a user can't request one for themselves (needs email delivery).
 - ⏳ **Hardening option** — per-subdomain sessions with a short-lived signed switch token (instead of the parent-domain cookie) if the threat model ever warrants it.
+- ⏳ **Scale-out** — the in-memory SSE broadcast means a single process; swap in pub/sub (Redis) if ever running multiple replicas.
 
 ---
 
-## Sequencing
+## Now / Next
+
+1. **HTTPS** — wildcard cert via Caddy + Linode DNS module; flip `COOKIE_SECURE=1`, `COOKIE_DOMAIN=.progressive-apps.com`; drop the plain `:80` site. Unlocks the PWA install prompt.
+2. **Self-serve password reset** — "forgot password" on the login screen that emails a `/reset/<token>` link (needs an email/SMTP path for invites and resets alike).
+3. **Family provisioning from the UI** — today families are created via `npm run family create`; a "create family" flow in-app would let anyone spin up a subdomain without shell access.
+
+## Backlog (ideas, not committed)
+
+- **Item attribution** — record which member added/checked each item, surfaced in the UI ("James added milk").
+- **Barcode scan** — camera-to-item lookup (via a local data source or manual mapping) for quick adds.
+- **Multiple lists** — e.g. weekly/dinner lists within a family, in addition to the single shared list.
+- **Offline conflict resolution** — today offline edits replay optimistically and converge by idempotency; explicit conflict badges for items edited on two devices would be clearer.
+- **Email delivery** — wire invites and password resets through a transactional email provider so links don't require manual copy-paste.
+
+---
+
+## Sequencing (historical)
 
 1. **Phase 0** first — everything depends on it. ~1 focused session.
 2. **Phase 1** (auth) — unblocks real usage between two people.
