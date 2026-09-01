@@ -54,7 +54,6 @@
   <div class="card">
     <div class="brand">
       <img class="logo" src="/icons/logo.webp" alt="Syncart" />
-      <h1>Syncart</h1>
       <p class="family">{family.name || 'Your family'}</p>
     </div>
 
@@ -184,8 +183,8 @@
     margin-bottom: 22px;
   }
   .logo {
-    width: 84px;
-    height: 84px;
+    width: 150px;
+    height: 150px;
     margin: 0 auto;
     display: block;
     filter: drop-shadow(0 4px 8px rgba(16, 185, 129, 0.35));
@@ -195,15 +194,8 @@
       filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4)) brightness(1.15);
     }
   }
-  h1 {
-    margin: 6px 0 0;
-    font-size: 26px;
-    font-weight: 800;
-    letter-spacing: -0.6px;
-    color: var(--ink);
-  }
   .family {
-    margin: 2px 0 0;
+    margin: 10px 0 0;
     font-size: 14px;
     font-weight: 700;
     color: var(--muted);
