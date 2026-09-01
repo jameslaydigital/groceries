@@ -40,5 +40,5 @@ fold the winners into the roadmap when we decide to build them.
 ## Delight
 - [ ] **Emoji reactions** — react to items ("🙏 avocado", "🤨 who bought this?").
 - [x] **Themes** — a couple of alternate colorways (ocean / berry / sunset) toggled from the header, persisted per device.
-- [ ] **Haptics / confetti** — little touches when the list is fully checked.
+- [x] **Haptics / confetti** — confetti burst + vibration when the last item is checked off.
 - [ ] **Widgets** — iOS/Android home-screen widget for the current list.

@@ -4,6 +4,7 @@
   import ItemRow from './components/ItemRow.svelte'
   import AddSheet from './components/AddSheet.svelte'
   import MembersPanel from './components/MembersPanel.svelte'
+  import Celebration from './components/Celebration.svelte'
   import AuthScreen from './components/AuthScreen.svelte'
   import InviteScreen from './components/InviteScreen.svelte'
   import ResetScreen from './components/ResetScreen.svelte'
@@ -13,6 +14,8 @@
 
   let showSheet = $state(false)
   let showMembers = $state(false)
+  let celebrate = $state(false)
+  let prevPending = null
   let inviteToken = $state('')
   let resetToken = $state('')
 
@@ -75,6 +78,17 @@
   $effect(() => {
     if (auth.status === 'authed') connectRealtime()
     else disconnectRealtime()
+  })
+
+  // Celebrate the moment the last item gets checked off — but never on first
+  // render or from a list that was already empty.
+  $effect(() => {
+    if (auth.status === 'authed' && prevPending !== null && prevPending > 0 && pending === 0) {
+      celebrate = true
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(80)
+      setTimeout(() => (celebrate = false), 2600)
+    }
+    prevPending = pending
   })
 
   onMount(() => {
@@ -326,6 +340,8 @@
         <span>{ui.toast.icon}</span> {ui.toast.message}
       </div>
     {/if}
+
+    <Celebration show={celebrate} />
   </div>
   </main>
 {/if}
