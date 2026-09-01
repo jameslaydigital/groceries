@@ -34,7 +34,9 @@ families/
 # Database backups
 backups/
 
-# Source logo (master art for re-rendering icons) — not deployed
+# Source logos (master art for re-rendering icons/wordmark) — not deployed or committed
 public/icons/logo_original.png
+public/icons/logo_transparent.png
+public/icons/logo_design_only.png
 
 deploy/.env

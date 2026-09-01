@@ -183,7 +183,7 @@
     <header>
       <div class="titles">
         <h1>
-          <span class="leaf">🧺</span> Syncart
+          <img class="wordmark" src="/icons/syncart_text.webp" alt="Syncart" />
         </h1>
         <p>{subtitle}</p>
       </div>
@@ -421,20 +421,23 @@
   }
   .titles h1 {
     margin: 0;
-    font-size: 30px;
-    font-weight: 800;
-    letter-spacing: -0.8px;
-    color: var(--ink);
     display: flex;
     align-items: center;
-    gap: 8px;
+    min-height: 34px;
   }
-  .leaf {
-    font-size: 26px;
-    filter: drop-shadow(0 2px 4px rgba(16, 185, 129, 0.35));
+  .wordmark {
+    height: 30px;
+    width: auto;
+    display: block;
+    filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.14));
+  }
+  @media (prefers-color-scheme: dark) {
+    .wordmark {
+      filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.4)) brightness(1.28);
+    }
   }
   .titles p {
-    margin: 2px 0 0;
+    margin: 3px 0 0;
     font-size: 14.5px;
     font-weight: 600;
     color: var(--muted);

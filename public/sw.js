@@ -1,5 +1,5 @@
 const CACHE = 'groceries-__SW_VERSION__'
-const PRECACHE = ['/', '/index.html', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png']
+const PRECACHE = ['/', '/index.html', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png', '/icons/syncart_text.webp']
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
