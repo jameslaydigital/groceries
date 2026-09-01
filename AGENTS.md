@@ -67,7 +67,7 @@ Subdomains via `lvh.me` → e.g. `http://james.lvh.me:5173`.
   `auth`, `ui`, `load`, `login`, `signup`, `logout`, `invite`, `refresh`, etc.
 - **`src/lib/realtime.js`** — `EventSource('/events')` → feeds `refresh()`.
 - **Components:** `App.svelte` (shell), `AuthScreen.svelte`, `AddSheet.svelte`,
-  `ItemRow.svelte` (swipe-to-delete), `ProgressRing.svelte`.
+  `ItemRow.svelte` (always-visible delete with an Undo toast), `ProgressRing.svelte`.
 
 ## Critical invariants & gotchas
 

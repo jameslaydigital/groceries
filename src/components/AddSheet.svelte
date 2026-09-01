@@ -179,6 +179,12 @@
     open = false
   }
 
+  function deleteEditing() {
+    const item = ui.editing
+    if (item) removeItem(item)
+    close()
+  }
+
   function onBackdrop(e) {
     if (e.target === e.currentTarget) close()
   }
@@ -306,7 +312,7 @@
       {/if}
 
       {#if editingId}
-        <button class="delete" onclick={() => { removeItem(editingId); close() }}>Delete item</button>
+        <button class="delete" onclick={deleteEditing}>Delete item</button>
       {/if}
 
       <button class="submit" class:busy onclick={submit} disabled={!name.trim() || busy}>

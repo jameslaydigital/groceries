@@ -80,10 +80,11 @@ export function applyMeta(m) {
 
 let toastTimer
 
-export function toast(message, icon = '🍏') {
-  ui.toast = { message, icon }
+export function toast(message, icon = '🍏', action = null) {
+  ui.toast = { message, icon, action }
   clearTimeout(toastTimer)
-  toastTimer = setTimeout(() => (ui.toast = null), 2600)
+  // an actionable toast (e.g. Undo) stays up longer
+  toastTimer = setTimeout(() => (ui.toast = null), action ? 6000 : 2600)
 }
 
 function readLocal() {
@@ -317,13 +318,28 @@ export async function updateItem(id, patch) {
   }
 }
 
-export async function removeItem(id) {
-  const idx = data.items.findIndex((i) => i.id === id)
+export async function removeItem(item) {
+  const idx = data.items.findIndex((i) => i.id === item.id)
   if (idx === -1) return
   const [removed] = data.items.splice(idx, 1)
   markDirty()
+
+  let restored = false
+  const undo = () => {
+    if (restored) return
+    restored = true
+    addItem({
+      name: removed.name,
+      quantity: removed.quantity,
+      category: removed.category,
+      tag_ids: removed.tag_ids ?? [],
+      notes: removed.notes ?? '',
+    })
+  }
+
   try {
-    await rpc('deleteItem', id)
+    await rpc('deleteItem', item.id)
+    if (!restored) toast(`Deleted ${removed.name}`, '🗑️', { label: 'Undo', run: undo })
     rpc('snapshot').then(refresh).catch(() => {})
   } catch (err) {
     data.items.splice(idx, 0, removed)

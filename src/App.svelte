@@ -338,6 +338,9 @@
     {#if ui.toast}
       <div class="toast" role="status">
         <span>{ui.toast.icon}</span> {ui.toast.message}
+        {#if ui.toast.action}
+          <button class="toast-action" onclick={ui.toast.action.run}>{ui.toast.action.label}</button>
+        {/if}
       </div>
     {/if}
 
@@ -819,6 +822,23 @@
     white-space: nowrap;
     animation: toast-in 0.3s cubic-bezier(0.34, 1.5, 0.64, 1) both;
     backdrop-filter: blur(8px);
+  }
+  .toast-action {
+    flex: none;
+    border: 0;
+    background: rgba(255, 255, 255, 0.18);
+    color: inherit;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 800;
+    padding: 6px 13px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.15s;
+  }
+  .toast-action:active {
+    background: rgba(255, 255, 255, 0.32);
+    transform: scale(0.95);
   }
   @keyframes toast-in {
     from {

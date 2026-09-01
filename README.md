@@ -108,7 +108,7 @@ scripts/create-family.mjs  CLI to provision a new family (npm run family)
 src/lib/rpc.js             rpc() client + offline queue
 src/lib/store.svelte.js    Svelte 5 runes store, optimistic updates, local persistence
 src/App.svelte             shell: header + progress ring, search, category chips, list, FAB
-src/components/            ItemRow (swipe-to-delete), AddSheet (bottom sheet), ProgressRing
+src/components/            ItemRow (delete + undo), AddSheet (bottom sheet), ProgressRing
 public/manifest.webmanifest, public/sw.js, scripts/gen-icons.mjs
 ```
 

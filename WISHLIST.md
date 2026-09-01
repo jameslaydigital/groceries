@@ -24,7 +24,7 @@ fold the winners into the roadmap when we decide to build them.
 - [x] **Add stores from the UI** — create a new store (name + icon) right from the add sheet; an item can already be tagged to multiple stores.
 - [x] **Item memory in the add sheet** — typing in the add sheet recalls items you've added before (with their usual qty/category/stores) so you can pick and go.
 - [x] **Delete remembered items** — a ✕ on each suggestion forgets that item from memory.
-- [x] **Direct item delete** — a clear "Delete item" button in the edit sheet (plus the existing swipe-to-delete), so removing an item doesn't require digging through the modal.
+- [x] **Reliable item delete + undo** — an always-visible ✕ on each row deletes immediately with an Undo toast (the old swipe-reveal ✕ was opening the edit modal instead of deleting).
 - [ ] **Purchase cadence suggestions** — log when items get checked off; for things you buy regularly, surface "you usually buy X about every N days — it's been longer" based on the average gap between purchases.
 - [ ] **Barcode scan** — camera-to-item lookup for quick adds.
 - [x] **Store aisle / price hints** — optional notes on items (aisle, sale price, preferred brand).
