@@ -188,20 +188,49 @@
   function onBackdrop(e) {
     if (e.target === e.currentTarget) close()
   }
+
+  let dragY = $state(0)
+  let dragging = $state(false)
+  let startY = 0
+
+  function onDragStart(e) {
+    startY = e.touches ? e.touches[0].clientY : e.clientY
+    dragging = true
+  }
+  function onDragMove(e) {
+    if (!dragging) return
+    const y = e.touches ? e.touches[0].clientY : e.clientY
+    dragY = Math.max(0, y - startY)
+  }
+  function onDragEnd() {
+    if (!dragging) return
+    dragging = false
+    if (dragY > 90) close()
+    dragY = 0
+  }
 </script>
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && close()} />
 
 {#if open}
   <div class="overlay" onclick={onBackdrop} role="presentation">
-    <div class="sheet" role="dialog" aria-modal="true" aria-label="Add item">
-      <div class="grabber"></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-label="Add item" style="--drag: {dragY}px" class:dragging={dragging}>
+      <div
+        class="grabber-zone"
+        ontouchstart={onDragStart}
+        ontouchmove={onDragMove}
+        ontouchend={onDragEnd}
+        onmousedown={onDragStart}
+        onmousemove={onDragMove}
+        onmouseup={onDragEnd}
+        onmouseleave={onDragEnd}
+      >
+        <div class="grabber"></div>
+      </div>
 
       <div class="head">
         <h2>{editingId ? 'Edit item' : 'Add to list'}</h2>
-        {#if editingId}
-          <button class="cancel" type="button" onclick={close}>Done</button>
-        {/if}
+        <button class="close-x" type="button" onclick={close} aria-label="Close">✕</button>
       </div>
 
       {#if favorites.length && !editingId}
@@ -349,13 +378,27 @@
     padding: 10px 22px calc(22px + env(safe-area-inset-bottom));
     box-shadow: 0 -10px 50px rgba(0, 0, 0, 0.18);
     animation: rise 0.34s cubic-bezier(0.22, 1.2, 0.36, 1);
+    translate: 0 var(--drag, 0px);
+    transition: translate 0.28s cubic-bezier(0.22, 1.2, 0.36, 1);
+  }
+  .sheet.dragging {
+    transition: none;
+  }
+  .grabber-zone {
+    display: flex;
+    justify-content: center;
+    padding: 14px 0 10px;
+    cursor: grab;
+    touch-action: none;
+  }
+  .grabber-zone:active {
+    cursor: grabbing;
   }
   .grabber {
     width: 44px;
     height: 5px;
     border-radius: 99px;
     background: var(--grabber);
-    margin: 0 auto 14px;
   }
   .head {
     display: flex;
@@ -363,23 +406,30 @@
     justify-content: space-between;
     margin-bottom: 14px;
   }
+  .close-x {
+    border: 0;
+    background: var(--chip-bg);
+    color: var(--muted);
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
+    font-size: 14px;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, transform 0.15s;
+  }
+  .close-x:active {
+    background: var(--danger-tint);
+    color: var(--danger);
+    transform: scale(0.9);
+  }
   h2 {
     margin: 0;
     font-size: 22px;
     font-weight: 800;
     letter-spacing: -0.4px;
     color: var(--ink);
-  }
-  .cancel {
-    border: 0;
-    background: transparent;
-    font-family: inherit;
-    color: var(--accent);
-    font-weight: 700;
-    font-size: 15px;
-    padding: 6px 10px;
-    border-radius: 10px;
-    cursor: pointer;
   }
   .field {
     display: flex;
