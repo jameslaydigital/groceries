@@ -63,6 +63,11 @@ const cookieFrom = (setCookie) => {
   return c ? c.split(';')[0] : ''
 }
 
+// AUTH_RATE_MS=1 makes the brute-force window just 1ms, so a failed attempt
+// and the next login can land in the same millisecond and trip the limiter.
+// Sleep 2ms after any throttling assertion so the window always elapses.
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
 // A public helper used to provision users for multi-family scenarios.
 function insertUser(email, password, name) {
   const info = platform
@@ -120,6 +125,7 @@ describe('auth.signup', () => {
     const res = await rpc('home.lvh.me', 'auth.signup', [{ email: 'bob@example.com', password: 'hunter2secret' }])
     assert.equal(res.status, 403)
     assert.equal(res.json.error.code, 'FORBIDDEN')
+    await sleep(2)
   })
 
   it('accepts a signup after an admin invites the email', async () => {
@@ -157,12 +163,14 @@ describe('auth.login', () => {
     const res = await rpc('home.lvh.me', 'auth.login', [{ email: 'jane@example.com', password: 'wrongpassword' }])
     assert.equal(res.status, 401)
     assert.equal(res.json.error.code, 'AUTH_FAILED')
+    await sleep(2)
   })
 
   it('rejects a user who is not a member of this family', async () => {
     const res = await rpc('home.lvh.me', 'auth.login', [{ email: 'stranger@example.com', password: 'hunter2secret' }])
     assert.equal(res.status, 401)
     assert.equal(res.json.error.code, 'AUTH_FAILED')
+    await sleep(2)
   })
 
   it('logout clears the session', async () => {
@@ -304,6 +312,7 @@ describe('invite links', () => {
     ])
     assert.equal(again.status, 403)
     assert.equal(again.json.error.code, 'FORBIDDEN')
+    await sleep(2)
   })
 
   it('a revoked invite no longer works', async () => {
@@ -318,6 +327,7 @@ describe('invite links', () => {
     ])
     assert.equal(res.status, 403)
     assert.equal(res.json.error.code, 'FORBIDDEN')
+    await sleep(2)
   })
 
   it('any email can use an invite link — the token is the gate', async () => {
@@ -339,6 +349,7 @@ describe('invite links', () => {
       { email: 'hank@example.com', password: 'hunter2secret', token: first.json.result.token },
     ])
     assert.equal(old.status, 403)
+    await sleep(2)
   })
 
   it('listMembers hides invite tokens from non-admins', async () => {
@@ -415,6 +426,7 @@ describe('password reset', () => {
     // the old password no longer works
     const oldLogin = await rpc('home.lvh.me', 'auth.login', [{ email: 'bob@example.com', password: 'hunter2secret' }])
     assert.equal(oldLogin.status, 401)
+    await sleep(2)
 
     // the new password works
     const newLogin = await rpc('home.lvh.me', 'auth.login', [{ email: 'bob@example.com', password: 'brandnewsecret' }])
