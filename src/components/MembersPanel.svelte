@@ -1,5 +1,5 @@
 <script>
-  import { members, user, family, invite, revokeInvite, listMembers, generateResetLink, toast } from '../lib/store.svelte.js'
+  import { members, user, family, invite, revokeInvite, listMembers, recentActivity, generateResetLink, toast } from '../lib/store.svelte.js'
 
   let { open = $bindable(false) } = $props()
   let email = $state('')
@@ -18,6 +18,7 @@
       email = ''
       resetFor = null
       listMembers().catch((e) => toast(e.message, '⚠️'))
+      recentActivity().catch(() => {})
     }
   })
 
@@ -113,6 +114,32 @@
   function initialOf(m) {
     const name = m.display_name?.trim()
     return (name || m.email)[0]?.toUpperCase() ?? '?'
+  }
+
+  function actorLabel(a) {
+    if (!a.user?.name) return 'Someone'
+    return a.user.id === user.id ? 'You' : a.user.name
+  }
+
+  function actionText(a) {
+    if (a.type === 'add') return `added ${a.item}`
+    if (a.type === 'check') return `checked off ${a.item}`
+    if (a.type === 'clear') return `cleared ${a.item} item${a.item === '1' ? '' : 's'}`
+    return a.type
+  }
+
+  function timeAgo(at) {
+    if (!at) return ''
+    const t = new Date(String(at).replace(' ', 'T') + 'Z').getTime()
+    if (Number.isNaN(t)) return ''
+    const secs = Math.max(0, Math.round((Date.now() - t) / 1000))
+    if (secs < 45) return 'just now'
+    const mins = Math.round(secs / 60)
+    if (mins < 60) return `${mins}m ago`
+    const hrs = Math.round(mins / 60)
+    if (hrs < 24) return `${hrs}h ago`
+    const days = Math.round(hrs / 24)
+    return days === 1 ? 'yesterday' : `${days}d ago`
   }
 </script>
 
@@ -222,6 +249,30 @@
                   <button class="revoke" onclick={() => (resetFor = null)} aria-label="Dismiss reset link">✕</button>
                 </li>
               {/if}
+            {/each}
+          </ul>
+        {/if}
+      </div>
+
+      <div class="section">
+        <div class="section-head">
+          <h3>Recent activity</h3>
+          {#if members.activity.length > 0}
+            <span class="count">{members.activity.length}</span>
+          {/if}
+        </div>
+        {#if members.activity.length === 0}
+          <p class="empty">Nothing yet — who added and checked off what will show up here.</p>
+        {:else}
+          <ul class="roster">
+            {#each members.activity as a (a.id)}
+              <li class:mine={a.user && a.user.id === user.id}>
+                <span class="avatar activity-avatar">{a.user?.name ? a.user.name[0].toUpperCase() : '🛒'}</span>
+                <span class="who">
+                  <span class="name">{actorLabel(a)}</span>
+                  <span class="email">{actionText(a)} · {timeAgo(a.at)}</span>
+                </span>
+              </li>
             {/each}
           </ul>
         {/if}
@@ -503,6 +554,16 @@
   .roster .reset-row {
     border: 1.5px dashed var(--input-border);
     background: var(--accent-tint);
+  }
+  .activity-avatar {
+    width: 32px;
+    height: 32px;
+    font-size: 14px;
+  }
+  .roster li.mine .avatar {
+    background: var(--chip-bg);
+    color: var(--muted);
+    box-shadow: none;
   }
   .link-url {
     word-break: break-all;

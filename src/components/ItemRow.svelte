@@ -1,9 +1,13 @@
 <script>
-  import { toggleItem, removeItem, ui, tagsById } from '../lib/store.svelte.js'
+  import { toggleItem, removeItem, ui, tagsById, user } from '../lib/store.svelte.js'
 
   let { item } = $props()
   let tagMap = $derived(tagsById())
   let badges = $derived((item.tag_ids ?? []).map((id) => tagMap.get(id)).filter(Boolean).slice(0, 2))
+  // Only credit the checker when it wasn't us — you already know you got it.
+  let credited = $derived(
+    item.checked && item.checked_by?.id && item.checked_by.id !== user.id && item.checked_by.name
+  )
 
   function onDelete() {
     removeItem(item)
@@ -27,6 +31,9 @@
       <span class="qty" class:done={item.checked}>{item.quantity}</span>
       {#if item.notes}
         <span class="note">{item.notes}</span>
+      {/if}
+      {#if credited}
+        <span class="credit">✓ {credited}</span>
       {/if}
     </div>
     {#if badges.length}
@@ -143,6 +150,17 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .credit {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--accent-soft);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .row.done .credit {
+    color: var(--muted);
   }
   .badges {
     display: inline-flex;

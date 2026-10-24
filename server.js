@@ -189,6 +189,16 @@ const TENANT_MIGRATIONS = [
   `ALTER TABLE items ADD COLUMN notes TEXT;
    ALTER TABLE item_history ADD COLUMN notes TEXT;`,
   `ALTER TABLE item_history ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0;`,
+  `ALTER TABLE items ADD COLUMN added_by INTEGER;
+   ALTER TABLE items ADD COLUMN checked_by INTEGER;
+   CREATE TABLE IF NOT EXISTS activity (
+     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+     user_id    INTEGER,
+     type       TEXT NOT NULL,
+     item       TEXT,
+     created_at TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE INDEX IF NOT EXISTS idx_activity_created ON activity(created_at);`,
 ]
 
 const DEFAULT_CATEGORIES = [
@@ -487,6 +497,7 @@ const listCategories = (db) =>
 const listItems = (db) =>
   db.prepare(`
     SELECT i.id, i.name, i.quantity, i.category, i.checked, i.notes,
+           i.added_by, i.checked_by,
            c.icon AS category_icon, c.sort_order AS category_order
     FROM items i
     JOIN categories c ON c.name = i.category
@@ -514,6 +525,58 @@ function replaceItemTags(db, itemId, tagIds) {
 
 function tagIdsFor(db, itemId) {
   return db.prepare('SELECT tag_id FROM item_tags WHERE item_id = ?').all(itemId).map((r) => r.tag_id)
+}
+
+// User ids live in the platform db while items live per-family, so names are
+// resolved here in one batched lookup whenever rows leave the server. Falls
+// back to email when no display name is set.
+function userLabel(u) {
+  return (u?.display_name ?? '').trim() || u?.email || ''
+}
+
+function resolveActors(ids) {
+  const out = new Map()
+  const list = Array.from(new Set([...ids].filter((id) => Number.isInteger(id))))
+  if (!list.length) return out
+  const marks = list.map(() => '?').join(',')
+  const rows = platform
+    .prepare(`SELECT id, email, display_name FROM users WHERE id IN (${marks})`)
+    .all(...list)
+  for (const r of rows) out.set(r.id, { id: r.id, name: userLabel(r) })
+  return out
+}
+
+// Turn raw integer user ids on rows into { id, name } actor objects (or null),
+// so the client can compare item.checked_by against its own user id.
+function withActorInfo(items) {
+  const ids = new Set()
+  for (const i of items) {
+    if (i?.added_by) ids.add(i.added_by)
+    if (i?.checked_by) ids.add(i.checked_by)
+  }
+  const actors = resolveActors(ids)
+  return items.map((i) => ({
+    ...i,
+    added_by: i?.added_by ? (actors.get(i.added_by) ?? null) : null,
+    checked_by: i?.checked_by ? (actors.get(i.checked_by) ?? null) : null,
+  }))
+}
+
+function decorateItems(db, items) {
+  return withActorInfo(withTagIds(db, items))
+}
+
+function serializeItem(db, row) {
+  return row ? decorateItems(db, [row])[0] : null
+}
+
+// Small durable changelog per family — survives clear-checked / item deletion
+// so the members panel can still say who did what. Pruned to a fixed size.
+const ACTIVITY_KEEP = 200
+function logActivity(db, userId, type, item) {
+  if (!userId) return
+  db.prepare('INSERT INTO activity (user_id, type, item) VALUES (?, ?, ?)').run(userId, type, String(item ?? ''))
+  db.prepare('DELETE FROM activity WHERE id NOT IN (SELECT id FROM activity ORDER BY id DESC LIMIT ?)').run(ACTIVITY_KEEP)
 }
 
 // Keep a "you've added this before" memory per item so the add sheet can
@@ -547,7 +610,7 @@ function snapshotOf(db) {
   return {
     categories: listCategories(db).all(),
     tags: listTags(db).all(),
-    items: withTagIds(db, listItems(db).all()),
+    items: decorateItems(db, listItems(db).all()),
   }
 }
 
@@ -622,8 +685,8 @@ function handleEvents(req, res) {
 const getItem = (db) => db.prepare('SELECT * FROM items WHERE id = ?')
 const addItemStmt = (db) =>
   db.prepare(
-    `INSERT INTO items (name, quantity, category, position, notes)
-     VALUES (?, ?, ?, COALESCE((SELECT MAX(position) + 1 FROM items), 0), ?)`
+    `INSERT INTO items (name, quantity, category, position, notes, added_by)
+     VALUES (?, ?, ?, COALESCE((SELECT MAX(position) + 1 FROM items), 0), ?, ?)`
   )
 const updateItemStmt = (db) =>
   db.prepare(
@@ -902,7 +965,7 @@ const methods = {
   },
 
   listItems(ctx) {
-    return withTagIds(ctx.db, listItems(ctx.db).all())
+    return decorateItems(ctx.db, listItems(ctx.db).all())
   },
 
   listTags(ctx) {
@@ -926,7 +989,7 @@ const methods = {
     if (!existing) throw Object.assign(new Error('Item not found'), { code: 'NOT_FOUND' })
     const clean = Array.from(new Set((Array.isArray(tagIds) ? tagIds : []).map(Number).filter(Number.isInteger)))
     replaceItemTags(db, id, clean)
-    return withTagIds(db, [getItem(db).get(id)])[0]
+    return serializeItem(db, getItem(db).get(id))
   },
 
   snapshot(ctx) {
@@ -946,13 +1009,14 @@ const methods = {
       db.prepare('INSERT INTO categories (name) VALUES (?)').run(cat)
     }
 
-    const info = addItemStmt(db).run(n, qty, cat, note)
+    const info = addItemStmt(db).run(n, qty, cat, note, ctx.user?.id ?? null)
     const id = info.lastInsertRowid
     if (cleanTags.length) {
       replaceItemTags(db, id, cleanTags)
     }
     rememberItem(db, n, qty, cat, cleanTags, note)
-    return withTagIds(db, [getItem(db).get(id)])[0]
+    logActivity(db, ctx.user?.id, 'add', n)
+    return serializeItem(db, getItem(db).get(id))
   },
 
   updateItem(ctx, id, patch = {}) {
@@ -988,15 +1052,20 @@ const methods = {
         patch.notes !== undefined ? patch.notes : existing.notes
       )
     }
-    return withTagIds(db, [getItem(db).get(id)])[0]
+    return serializeItem(db, getItem(db).get(id))
   },
 
   setChecked(ctx, id, checked) {
     const db = ctx.db
     const existing = getItem(db).get(id)
     if (!existing) throw Object.assign(new Error('Item not found'), { code: 'NOT_FOUND' })
-    updateItemStmt(db).run(null, null, null, checked ? 1 : 0, id)
-    return getItem(db).get(id)
+    if (checked) {
+      db.prepare("UPDATE items SET checked = 1, checked_by = ?, updated_at = datetime('now') WHERE id = ?").run(ctx.user?.id ?? null, id)
+      if (!existing.checked) logActivity(db, ctx.user?.id, 'check', existing.name)
+    } else {
+      db.prepare("UPDATE items SET checked = 0, checked_by = NULL, updated_at = datetime('now') WHERE id = ?").run(id)
+    }
+    return serializeItem(db, getItem(db).get(id))
   },
 
   deleteItem(ctx, id) {
@@ -1006,7 +1075,24 @@ const methods = {
 
   clearChecked(ctx) {
     const info = clearCheckedStmt(ctx.db).run()
+    if (info.changes > 0) logActivity(ctx.db, ctx.user?.id, 'clear', String(info.changes))
     return { removed: info.changes }
+  },
+
+  recentActivity(ctx, { limit = 30 } = {}) {
+    const db = ctx.db
+    const lim = Math.max(1, Math.min(100, Number(limit) || 30))
+    const rows = db
+      .prepare('SELECT id, user_id, type, item, created_at FROM activity ORDER BY id DESC LIMIT ?')
+      .all(lim)
+    const actors = resolveActors(new Set(rows.map((r) => r.user_id)))
+    return rows.map((r) => ({
+      id: r.id,
+      type: r.type,
+      item: r.item,
+      at: r.created_at,
+      user: r.user_id ? (actors.get(r.user_id) ?? null) : null,
+    }))
   },
 
   suggestions(ctx, prefix = '', limit = 8) {

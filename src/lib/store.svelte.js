@@ -5,7 +5,7 @@ const STATE_KEY = 'groceries.state.v1'
 export const data = $state({ categories: [], items: [], tags: [] })
 export const family = $state({ name: '', subdomain: '', bootstrap: false })
 export const user = $state({ id: null, email: '', display_name: '', role: null, families: [] })
-export const members = $state({ list: [], invites: [], loaded: false })
+export const members = $state({ list: [], invites: [], activity: [], loaded: false })
 export const auth = $state({ status: 'loading' }) // loading | anon | authed
 export const ui = $state({
   ready: false,
@@ -217,6 +217,12 @@ export async function listMembers() {
 export async function revokeInvite(id) {
   await rpc('revokeInvite', { id })
   members.invites = members.invites.filter((i) => i.id !== id)
+}
+
+export async function recentActivity(limit = 30) {
+  const list = await rpc('recentActivity', { limit })
+  members.activity = Array.isArray(list) ? list : []
+  return members.activity
 }
 
 export function generateResetLink(userId) {

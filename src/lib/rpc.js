@@ -2,7 +2,7 @@ const API = '/rpc'
 const PENDING_KEY = 'groceries.pending.v1'
 
 const MUTATIONS = new Set(['addItem', 'updateItem', 'setChecked', 'deleteItem', 'clearChecked'])
-const READS = new Set(['listItems', 'listCategories', 'snapshot', 'suggestions', 'ping'])
+const READS = new Set(['listItems', 'listCategories', 'snapshot', 'suggestions', 'ping', 'recentActivity'])
 
 const state = {
   offline: typeof navigator !== 'undefined' && navigator.onLine === false,

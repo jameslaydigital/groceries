@@ -20,7 +20,13 @@ fold the winners into the roadmap when we decide to build them.
 - [ ] **App Store Preparation** — To allow people to install straight from the play store or apple store.
 
 ## Shopping UX
-- [ ] **Item attribution** — record which member added/checked each item ("James added milk").
+- [ ] **Back button to close the edit/add item modal** - when editing or adding an item, left swipe closes the app when you really just want to get rid of the keyboard.
+- [ ] **Don't autofocus inputs when opening edit modal** - the keyboard pops up and hides the ui.
+- [ ] **Visually Represent Date Last Purchased** - perhaps something like "last purchase 3 weeks ago".
+- [ ] **Back-swipe 2x at home screen to exit app** - on the first one it should say in a toast "swipe again to close the app".
+- [ ] **Item Links Take You To The Purchase Site** - on items that have website links, you can click to go straight to the link and purchase it.
+- [x] **Item attribution** — record which member added/checked each item ("James added milk").
+- [ ] **Add Item Wizard to Replace Modal** — instead of the add item process being a modal, it should be a 3-step wizard. Enter the name and qty. Choose category and stores. Add links or notes. Ask "add another or return to shopping list?". Checkmark UI feedback upon completion.
 - [x] **Add stores from the UI** — create a new store (name + icon) right from the add sheet; an item can already be tagged to multiple stores.
 - [x] **Item memory in the add sheet** — typing in the add sheet recalls items you've added before (with their usual qty/category/stores) so you can pick and go.
 - [x] **Delete remembered items** — a ✕ on each suggestion forgets that item from memory.
