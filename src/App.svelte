@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte'
+  import { flip } from 'svelte/animate'
   import ProgressRing from './components/ProgressRing.svelte'
   import ItemRow from './components/ItemRow.svelte'
   import AddSheet from './components/AddSheet.svelte'
@@ -18,6 +19,11 @@
   let prevPending = null
   let inviteToken = $state('')
   let resetToken = $state('')
+
+  // Keep the flip animation off for users who ask for reduced motion.
+  const reduceMotion =
+    typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  const flipDuration = reduceMotion ? 0 : 320
 
   onMount(() => {
     const m = /^\/invite\/accept\/([^/]+)/.exec(window.location.pathname)
@@ -295,7 +301,9 @@
               </div>
               <div class="items">
                 {#each group.items as item (item.id)}
-                  <ItemRow {item} />
+                  <div class="item-slot" animate:flip={{ duration: flipDuration }}>
+                    <ItemRow {item} />
+                  </div>
                 {/each}
               </div>
             </div>
@@ -633,6 +641,21 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+  }
+  .item-slot {
+    position: relative;
+  }
+  .item-slot:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -3px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--card-border) 12%, var(--card-border) 88%, transparent);
+  }
+  .item-slot:last-child :global(.row) {
+    padding-bottom: 2px;
   }
 
   .empty {

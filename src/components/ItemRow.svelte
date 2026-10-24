@@ -9,6 +9,19 @@
     item.checked && item.checked_by?.id && item.checked_by.id !== user.id && item.checked_by.name
   )
 
+  let popping = $state(false)
+  let popTimer
+
+  function onCheck() {
+    // Brief ring only for a local check-off, not for pre-checked rows on load.
+    if (!item.checked) {
+      popping = true
+      clearTimeout(popTimer)
+      popTimer = setTimeout(() => (popping = false), 450)
+    }
+    toggleItem(item)
+  }
+
   function onDelete() {
     removeItem(item)
   }
@@ -18,9 +31,15 @@
 </script>
 
 <div class="row" class:done={item.checked}>
-  <button class="check" class:done={item.checked} onclick={() => toggleItem(item)} aria-label="Toggle {item.name}">
-    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M4 12.5l5 5L20 6.5" />
+  <button
+    class="check"
+    class:done={item.checked}
+    class:pop={popping}
+    onclick={onCheck}
+    aria-label="Toggle {item.name}"
+  >
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <path pathLength="1" d="M4.5 12.5l5 5L19.5 6.5" />
     </svg>
   </button>
 
@@ -60,48 +79,86 @@
     gap: 12px;
     padding: 9px 2px;
   }
-  .row:not(:last-child)::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: -3px;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--card-border) 12%, var(--card-border) 88%, transparent);
-  }
-  .row:last-child {
-    padding-bottom: 2px;
-  }
 
   .check {
+    position: relative;
     flex: none;
     width: 30px;
     height: 30px;
-    border-radius: 10px;
+    border-radius: 50%;
     border: 2px solid var(--check-border);
     background: var(--check-bg);
     display: grid;
     place-items: center;
     color: transparent;
     cursor: pointer;
-    transition: all 0.22s cubic-bezier(0.34, 1.6, 0.64, 1);
+    transition:
+      border-color 0.2s ease,
+      background 0.2s ease,
+      color 0.18s ease,
+      box-shadow 0.2s ease,
+      transform 0.16s cubic-bezier(0.34, 1.6, 0.64, 1);
     -webkit-tap-highlight-color: transparent;
   }
+  /* The gradient fill fades in under the stroke instead of snapping on. */
+  .check::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 50%;
+    background: var(--accent-gradient);
+    opacity: 0;
+    transform: scale(0.9);
+    transition:
+      opacity 0.18s ease,
+      transform 0.24s cubic-bezier(0.34, 1.6, 0.64, 1);
+  }
   .check svg {
-    transform: scale(0.4);
-    transition: transform 0.25s cubic-bezier(0.34, 1.8, 0.64, 1);
+    position: relative;
+    z-index: 1;
+  }
+  .check svg path {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    transition: stroke-dashoffset 0.22s ease 0.04s;
   }
   .check.done {
-    background: var(--accent-gradient);
     border-color: transparent;
     color: #fff;
     box-shadow: 0 4px 12px var(--accent-glow);
   }
-  .check.done svg {
+  .check.done::before {
+    opacity: 1;
     transform: scale(1);
   }
+  .check.done svg path {
+    stroke-dashoffset: 0;
+  }
   .check:active {
-    transform: scale(0.88);
+    transform: scale(0.9);
+  }
+  .check.done:active {
+    transform: scale(0.94);
+  }
+  /* Quiet ring that expands once when this device checks the row. */
+  .check.pop::after {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    opacity: 0;
+    animation: check-ring 0.42s ease-out;
+  }
+  @keyframes check-ring {
+    0% {
+      opacity: 0.35;
+      transform: scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.55);
+    }
   }
 
   .body {
@@ -207,5 +264,16 @@
   }
   .row.done .qty {
     color: var(--muted);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .check,
+    .check::before,
+    .check svg path {
+      transition: none;
+    }
+    .check.pop::after {
+      animation: none;
+    }
   }
 </style>
