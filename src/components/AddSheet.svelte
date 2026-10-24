@@ -17,6 +17,13 @@
   let newTagName = $state('')
   let newTagIcon = $state('🛒')
 
+  // Add flow is a 3-step wizard (name & qty → category & stores → notes);
+  // editing an existing item stays a single sheet.
+  let step = $state(0)
+  let done = $state(false)
+  let lastAdded = $state('')
+  let stepTitle = $derived(['Add an item', 'Category & stores', 'Notes'][step] ?? 'Add an item')
+
   let categories = $derived(data.categories)
   let tags = $derived(data.tags)
 
@@ -47,6 +54,11 @@
       category = 'Produce'
       notes = ''
       selectedTags = []
+      addingTag = false
+      newTagName = ''
+      step = 0
+      done = false
+      lastAdded = ''
     }
   })
 
@@ -154,24 +166,46 @@
     const n = name.trim()
     if (!n || busy) return
     busy = true
-    if (editingId) {
-      await updateItem(editingId, {
-        name: n,
-        quantity: quantity.trim() || '1',
-        category,
-        notes: notes.trim() || '',
-        tag_ids: selectedTags,
-      })
-      ui.editing = null
-      open = false
-    } else {
-      await addItem({ name: n, quantity: quantity.trim() || '1', category, notes: notes.trim() || '', tag_ids: selectedTags })
-      name = ''
-      quantity = '1'
-      notes = ''
-      input?.focus()
+    try {
+      if (editingId) {
+        await updateItem(editingId, {
+          name: n,
+          quantity: quantity.trim() || '1',
+          category,
+          notes: notes.trim() || '',
+          tag_ids: selectedTags,
+        })
+        ui.editing = null
+        open = false
+      } else {
+        await addItem({ name: n, quantity: quantity.trim() || '1', category, notes: notes.trim() || '', tag_ids: selectedTags })
+        lastAdded = n
+        done = true
+      }
+    } finally {
+      busy = false
     }
-    busy = false
+  }
+
+  function nextStep() {
+    if (step < 2 && name.trim()) step += 1
+  }
+
+  function prevStep() {
+    if (step > 0) step -= 1
+  }
+
+  function addAnother() {
+    name = ''
+    quantity = '1'
+    category = 'Produce'
+    notes = ''
+    selectedTags = []
+    suggestions = []
+    step = 0
+    done = false
+    lastAdded = ''
+    input?.focus()
   }
 
   function close() {
@@ -212,9 +246,137 @@
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && close()} />
 
+{#snippet nameField()}
+  <label class="field">
+    <span class="label">Item</span>
+    <input
+      bind:this={input}
+      bind:value={name}
+      placeholder="e.g. Avocados"
+      autocomplete="off"
+      onkeydown={(e) => {
+        if (e.key !== 'Enter') return
+        if (editingId) {
+          if (e.metaKey || e.ctrlKey) submit()
+        } else {
+          nextStep()
+        }
+      }}
+    />
+  </label>
+{/snippet}
+
+{#snippet qtyField()}
+  <label class="field">
+    <span class="label">Qty</span>
+    <input bind:value={quantity} placeholder="2" inputmode="text" autocomplete="off" />
+  </label>
+{/snippet}
+
+{#snippet notesField()}
+  <label class="field">
+    <span class="label">Notes</span>
+    <input bind:value={notes} placeholder="Aisle, price, brand… (optional)" autocomplete="off" />
+  </label>
+{/snippet}
+
+{#snippet categoryField()}
+  <div class="field">
+    <span class="label">Category</span>
+    <div class="cat-grid">
+      {#each categories as c (c.name)}
+        <button class:active={category === c.name} onclick={() => (category = c.name)}>
+          <span class="cat-icon">{c.icon}</span>
+          <span class="cat-name">{c.name}</span>
+        </button>
+      {/each}
+    </div>
+  </div>
+{/snippet}
+
+{#snippet storesField()}
+  {#if tags.length || addingTag}
+    <div class="field">
+      <span class="label">Stores</span>
+      <div class="tag-row">
+        {#each tags as t (t.id)}
+          <button class:active={selectedTags.includes(t.id)} onclick={() => toggleTag(t.id)}>
+            <span>{t.icon}</span> {t.name}
+          </button>
+        {/each}
+        {#if addingTag}
+          <span class="new-tag">
+            <input
+              bind:value={newTagName}
+              placeholder="Store name"
+              autocomplete="off"
+              onkeydown={(e) => e.key === 'Enter' && addStore()}
+              onblur={() => {
+                if (!newTagName.trim()) addingTag = false
+              }}
+            />
+            <span class="icon-row">
+              {#each ['🛒', '🥑', '🏬', '🥩', '🧑‍🌾', '🍎'] as ico (ico)}
+                <button class:active={newTagIcon === ico} onclick={() => (newTagIcon = ico)} aria-label={`Icon ${ico}`}>{ico}</button>
+              {/each}
+            </span>
+            <button class="new-tag-add" onclick={addStore} disabled={!newTagName.trim() || busy}>Add</button>
+          </span>
+        {:else}
+          <button class="tag-add" onclick={() => (addingTag = true)}>+ Store</button>
+        {/if}
+      </div>
+    </div>
+  {/if}
+{/snippet}
+
+{#snippet favoritesBlock()}
+  {#if favorites.length}
+    <div class="favorites">
+      <span class="label">Favorites</span>
+      <div class="fav-row">
+        {#each favorites as f (f.name)}
+          <span class="chip-wrap">
+            <button class="chip" onclick={() => quickAdd(f)}>
+              <span>⭐</span>
+              <span class="chip-name">{f.name}</span>
+            </button>
+            <button class="chip-del" onclick={() => unfav(f)} aria-label={`Unfavorite ${f.name}`}>✕</button>
+          </span>
+        {/each}
+      </div>
+    </div>
+  {/if}
+{/snippet}
+
+{#snippet suggestionsBlock()}
+  {#if suggestions.length}
+    <div class="suggestions">
+      {#each suggestions as s (s.name)}
+        <span class="chip-wrap">
+          <button class="chip" onclick={() => pickSuggestion(s)}>
+            <span>{categoryIcon(s.category)}</span>
+            <span class="chip-name">{s.name}</span>
+            <span class="chip-sub">{s.quantity}</span>
+          </button>
+          <button
+            class="chip-del"
+            class:on={s.favorite}
+            onclick={() => toggleFavSuggestion(s)}
+            aria-label={s.favorite ? `Unfavorite ${s.name}` : `Favorite ${s.name}`}
+          >
+            {s.favorite ? '★' : '☆'}
+          </button>
+          <button class="chip-del forget" onclick={() => forget(s)} aria-label={`Forget ${s.name}`}>✕</button>
+        </span>
+      {/each}
+    </div>
+  {/if}
+{/snippet}
+
 {#if open}
   <div class="overlay" onclick={onBackdrop} role="presentation">
-    <div class="sheet" role="dialog" aria-modal="true" aria-label="Add item" style="--drag: {dragY}px" class:dragging={dragging}>
+    <div class="sheet" role="dialog" aria-modal="true" aria-label={editingId ? 'Edit item' : 'Add item'} style="--drag: {dragY}px" class:dragging={dragging}>
       <div
         class="grabber-zone"
         role="presentation"
@@ -230,131 +392,88 @@
       </div>
 
       <div class="head">
-        <h2>{editingId ? 'Edit item' : 'Add to list'}</h2>
+        <h2>{editingId ? 'Edit item' : done ? 'Added to list' : stepTitle}</h2>
         <button class="close-x" type="button" onclick={close} aria-label="Close">✕</button>
       </div>
 
-      {#if favorites.length && !editingId}
-        <div class="favorites">
-          <span class="label">Favorites</span>
-          <div class="fav-row">
-            {#each favorites as f (f.name)}
-              <span class="chip-wrap">
-                <button class="chip" onclick={() => quickAdd(f)}>
-                  <span>⭐</span>
-                  <span class="chip-name">{f.name}</span>
-                </button>
-                <button class="chip-del" onclick={() => unfav(f)} aria-label={`Unfavorite ${f.name}`}>✕</button>
-              </span>
-            {/each}
+      {#if editingId}
+        {@render nameField()}
+        {@render qtyField()}
+        {@render notesField()}
+        {@render categoryField()}
+        {@render storesField()}
+
+        <button class="delete" onclick={deleteEditing}>Delete item</button>
+
+        <button class="submit" class:busy onclick={submit} disabled={!name.trim() || busy}>
+          {#if busy}
+            <span class="spin"></span>
+          {:else}
+            Save changes
+          {/if}
+        </button>
+      {:else if done}
+        <div class="done-screen">
+          <div class="done-check" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="38" height="38" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 12.5l5 5L20 6.5" />
+            </svg>
+          </div>
+          <p class="done-name">{lastAdded}</p>
+          <p class="done-sub">is on the list.</p>
+          <div class="done-actions">
+            <button class="again" onclick={addAnother}>Add another</button>
+            <button class="submit" onclick={close}>Return to shopping list</button>
           </div>
         </div>
-      {/if}
-
-      {#if suggestions.length && !editingId}
-        <div class="suggestions">
-          {#each suggestions as s (s.name)}
-            <span class="chip-wrap">
-              <button class="chip" onclick={() => pickSuggestion(s)}>
-                <span>{categoryIcon(s.category)}</span>
-                <span class="chip-name">{s.name}</span>
-                <span class="chip-sub">{s.quantity}</span>
-              </button>
-              <button
-                class="chip-del"
-                class:on={s.favorite}
-                onclick={() => toggleFavSuggestion(s)}
-                aria-label={s.favorite ? `Unfavorite ${s.name}` : `Favorite ${s.name}`}
-              >
-                {s.favorite ? '★' : '☆'}
-              </button>
-              <button class="chip-del forget" onclick={() => forget(s)} aria-label={`Forget ${s.name}`}>✕</button>
+      {:else}
+        <div class="progress" aria-label="Step {step + 1} of 3">
+          {#each [0, 1, 2] as s (s)}
+            <span class="pip" class:on={s === step} class:done={s < step}>
+              {#if s < step}✓{:else}{s + 1}{/if}
             </span>
+            {#if s < 2}<span class="bar" class:on={s < step}></span>{/if}
           {/each}
         </div>
-      {/if}
 
-      <label class="field">
-        <span class="label">Item</span>
-        <input
-          bind:this={input}
-          bind:value={name}
-          placeholder="e.g. Avocados"
-          autocomplete="off"
-          onkeydown={(e) => e.key === 'Enter' && (e.metaKey || e.ctrlKey) && submit()}
-        />
-      </label>
-
-      <label class="field">
-        <span class="label">Qty</span>
-        <input bind:value={quantity} placeholder="2" inputmode="text" autocomplete="off" />
-      </label>
-
-      <label class="field">
-        <span class="label">Notes</span>
-        <input bind:value={notes} placeholder="Aisle, price, brand… (optional)" autocomplete="off" />
-      </label>
-
-      <div class="field">
-        <span class="label">Category</span>
-        <div class="cat-grid">
-          {#each categories as c (c.name)}
-            <button class:active={category === c.name} onclick={() => (category = c.name)}>
-              <span class="cat-icon">{c.icon}</span>
-              <span class="cat-name">{c.name}</span>
-            </button>
-          {/each}
-        </div>
-      </div>
-
-      {#if tags.length || addingTag}
-        <div class="field">
-          <span class="label">Stores</span>
-          <div class="tag-row">
-            {#each tags as t (t.id)}
-              <button class:active={selectedTags.includes(t.id)} onclick={() => toggleTag(t.id)}>
-                <span>{t.icon}</span> {t.name}
-              </button>
-            {/each}
-            {#if addingTag}
-              <span class="new-tag">
-                <input
-                  bind:value={newTagName}
-                  placeholder="Store name"
-                  autocomplete="off"
-                  onkeydown={(e) => e.key === 'Enter' && addStore()}
-                  onblur={() => {
-                    if (!newTagName.trim()) addingTag = false
-                  }}
-                />
-                <span class="icon-row">
-                  {#each ['🛒', '🥑', '🏬', '🥩', '🧑‍🌾', '🍎'] as ico (ico)}
-                    <button class:active={newTagIcon === ico} onclick={() => (newTagIcon = ico)} aria-label={`Icon ${ico}`}>{ico}</button>
-                  {/each}
-                </span>
-                <button class="new-tag-add" onclick={addStore} disabled={!newTagName.trim() || busy}>Add</button>
-              </span>
+        {#key step}
+          <div class="step-body">
+            {#if step === 0}
+              {@render favoritesBlock()}
+              {@render suggestionsBlock()}
+              {@render nameField()}
+              {@render qtyField()}
+            {:else if step === 1}
+              {@render categoryField()}
+              {@render storesField()}
             {:else}
-              <button class="tag-add" onclick={() => (addingTag = true)}>+ Store</button>
+              {@render notesField()}
+              <p class="hint">Links are coming soon — notes cover aisle, price, or brand for now.</p>
             {/if}
           </div>
+        {/key}
+
+        <div class="steps-nav">
+          {#if step > 0}
+            <button class="back" type="button" onclick={prevStep}>Back</button>
+          {/if}
+          {#if step < 2}
+            <button class="submit next" type="button" onclick={nextStep} disabled={!name.trim() || busy}>Next</button>
+          {:else}
+            <button class="submit" class:busy type="button" onclick={submit} disabled={!name.trim() || busy}>
+              {#if busy}
+                <span class="spin"></span>
+              {:else}
+                Add item
+              {/if}
+            </button>
+          {/if}
         </div>
       {/if}
-
-      {#if editingId}
-        <button class="delete" onclick={deleteEditing}>Delete item</button>
-      {/if}
-
-      <button class="submit" class:busy onclick={submit} disabled={!name.trim() || busy}>
-        {#if busy}
-          <span class="spin"></span>
-        {:else}
-          {editingId ? 'Save changes' : 'Add item'}
-        {/if}
-      </button>
     </div>
   </div>
 {/if}
+
 
 <style>
   .overlay {
@@ -431,6 +550,135 @@
     font-weight: 800;
     letter-spacing: -0.4px;
     color: var(--ink);
+  }
+  .progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .pip {
+    flex: none;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--muted);
+    background: var(--chip-bg);
+    transition: all 0.2s;
+  }
+  .pip.on {
+    color: var(--accent);
+    background: var(--accent-tint);
+    box-shadow: inset 0 0 0 1.5px var(--accent);
+  }
+  .pip.done {
+    color: #fff;
+    background: var(--accent-gradient);
+    box-shadow: 0 3px 8px var(--accent-glow);
+  }
+  .bar {
+    flex: 1;
+    height: 3px;
+    border-radius: 99px;
+    background: var(--chip-bg);
+    transition: background 0.2s;
+  }
+  .bar.on {
+    background: var(--accent);
+  }
+  .step-body {
+    animation: fade-up 0.22s ease both;
+  }
+  .steps-nav {
+    display: flex;
+    gap: 10px;
+    margin-top: 6px;
+  }
+  .steps-nav .submit {
+    flex: 1;
+    width: auto;
+    margin-top: 0;
+  }
+  .back {
+    flex: none;
+    border: 0;
+    border-radius: 16px;
+    padding: 16px 18px;
+    font-size: 15px;
+    font-weight: 800;
+    font-family: inherit;
+    color: var(--ink);
+    background: var(--chip-bg);
+    cursor: pointer;
+    transition: transform 0.15s;
+  }
+  .back:active {
+    transform: scale(0.97);
+  }
+  .hint {
+    margin: -6px 0 4px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--muted);
+    line-height: 1.45;
+  }
+  .done-screen {
+    text-align: center;
+    padding: 12px 4px 4px;
+    animation: fade-up 0.3s ease both;
+  }
+  .done-check {
+    width: 84px;
+    height: 84px;
+    margin: 0 auto 16px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    color: #fff;
+    background: var(--accent-gradient);
+    box-shadow: 0 12px 30px var(--accent-glow);
+    animation: pop 0.45s cubic-bezier(0.34, 1.7, 0.64, 1) both;
+  }
+  .done-name {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.4px;
+    color: var(--ink);
+  }
+  .done-sub {
+    margin: 4px 0 20px;
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .done-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .done-actions .submit {
+    margin-top: 0;
+  }
+  .again {
+    width: 100%;
+    padding: 15px;
+    border: 0;
+    border-radius: 16px;
+    font-family: inherit;
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--ink);
+    background: var(--chip-bg);
+    cursor: pointer;
+    transition: transform 0.15s;
+  }
+  .again:active {
+    transform: scale(0.97);
   }
   .field {
     display: flex;
@@ -753,6 +1001,26 @@
     }
     to {
       transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes fade-up {
+    from {
+      transform: translateY(8px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes pop {
+    from {
+      transform: scale(0);
+      opacity: 0;
+    }
+    to {
+      transform: scale(1);
       opacity: 1;
     }
   }
