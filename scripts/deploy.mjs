@@ -31,8 +31,8 @@ for (let i = 0; i < args.length; i++) {
 
 /* ---------------- helpers ---------------- */
 
-function run(cmd, cmdArgs, { cwd = ROOT } = {}) {
-  console.log(`\n$ ${cmd} ${cmdArgs.join(' ')}`)
+function run(cmd, cmdArgs, { cwd = ROOT, label } = {}) {
+  console.log(`\n$ ${label || `${cmd} ${cmdArgs.join(' ')}`}`)
   const r = spawnSync(cmd, cmdArgs, { stdio: 'inherit', cwd })
   if (r.status !== 0) {
     console.error(`\n❌ ${cmd} failed (exit ${r.status})`)
@@ -84,9 +84,31 @@ if (flags.dryRun) {
   process.exit(0)
 }
 
-run('ssh', [
-  host,
-  'cd /opt/syncart && npm run build && sudo systemctl restart syncart && sleep 1 && systemctl is-active syncart; [ -f .env ] && echo "ℹ  .env preserved" || echo "⚠️  no /opt/syncart/.env — cp .env.example .env to configure"',
-])
+// .appd.conf is the source of truth for the service unit. Install it only
+// when it differs so a hand-edited /etc/appd/syncart.json isn't clobbered on
+// every deploy, and so apply() isn't run needlessly.
+const remote = `
+cd /opt/syncart || exit 1
+npm run build || exit 1
 
-console.log('\n✅ Deployed to ' + host + ' — service active.')
+if [ -f .appd.conf ]; then
+  if ! command -v appd >/dev/null 2>&1; then
+    echo "❌ appd is not installed on this host — see deploy/README.md" >&2
+    exit 1
+  fi
+  if ! sudo cmp -s .appd.conf /etc/appd/syncart.json; then
+    sudo install -m 600 .appd.conf /etc/appd/syncart.json || exit 1
+    sudo appd apply syncart || exit 1
+    echo "ℹ  appd config updated from .appd.conf"
+  fi
+fi
+
+sudo systemctl restart appd-syncart || exit 1
+sleep 1
+systemctl is-active appd-syncart
+[ -f .env ] && echo "ℹ  .env preserved" || echo "⚠️  no /opt/syncart/.env — cp .env.example .env to configure"
+`
+
+run('ssh', [host, remote], { label: `ssh ${host} 'cd /opt/syncart && build, sync appd config, restart'` })
+
+console.log('\n✅ Deployed to ' + host + ' — appd-syncart.service active.')

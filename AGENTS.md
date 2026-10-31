@@ -96,6 +96,13 @@ Subdomains via `lvh.me` → e.g. `http://james.lvh.me:5173`.
   (e.g., `auth.status`, not `let authStatus`). Runes only in `.svelte`/`.svelte.js`.
 - **`node:sqlite` requires Node ≥ 22.** The runtime has zero npm dependencies
   (`node:sqlite` is built in), so a production image/deploy needs no `node_modules`.
+- **The service config lives in `.appd.conf`** (repo root). On the live box
+  appd generates `appd-syncart.service` from `/etc/appd/syncart.json`; never
+  hand-edit the unit, and let `npm run deploy` install the repo config when it
+  changes. `permissions.write` must include `/var/lib/syncart` (where
+  `DATA_DIR`/`PLATFORM_DB` point) — appd runs with `ProtectSystem=strict`, so a
+  missing entry silently opens SQLite read-only. Node also needs
+  `"executable_memory": true` or it dies with `SIGTRAP`.
 - **Tests are env-isolated:** each `test/*.test.mjs` sets temp `DATA_DIR` /
   `PLATFORM_DB` (and often `AUTH_RATE_MS`) before importing `server.js`. New
   tests should do the same and must not assume a shared/claimed family — sign

@@ -25,46 +25,56 @@ chmod 440 /etc/sudoers.d/90-syncart-deploy
 apt update && apt full-upgrade -y
 apt install -y nodejs npm caddy        # or node via nodesource for a pinned version
 hostnamectl set-hostname syncart
+
+# appd turns .appd.conf into a hardened systemd unit (see section 3)
+cargo install --locked appd            # install Rust (rustup) if cargo is missing
+sudo "$(command -v appd)" install      # binary, man page, completions
 ```
 
-Verify `node -v` ≥ 22 (needs built-in `node:sqlite`) and `caddy version`.
+Verify `node -v` ≥ 22 (needs built-in `node:sqlite`), `caddy version`, and
+`appd --version`.
 
-## 3. App + systemd service
+## 3. App + appd service
+
+The service is defined by **`.appd.conf`** at the repo root and managed by
+`appd`: one JSON file becomes a hardened systemd unit, a private state
+directory, and an explicit list of read/write/network permissions. The app is
+named `syncart`, so the unit is `appd-syncart.service` and the installed config
+is `/etc/appd/syncart.json`.
 
 ```bash
 sudo mkdir -p /opt/syncart && sudo chown deploy:deploy /opt/syncart
 # copy the repo (rsync from your machine, or git clone)
 cd /opt/syncart && npm ci && npm run build
+
+sudo install -m 600 .appd.conf /etc/appd/syncart.json
+sudo appd doctor         # expect 0 problems, 0 warnings
+sudo appd apply syncart  # render the unit + reload systemd (does not start it)
+sudo appd enable syncart
+sudo appd start syncart
 ```
 
-`/etc/systemd/system/syncart.service`:
-
-```ini
-[Unit]
-Description=Syncart grocery list server
-After=network.target
-
-[Service]
-User=deploy
-Group=deploy
-WorkingDirectory=/opt/syncart
-Environment=NODE_ENV=production
-Environment=PORT=8787
-Environment=COOKIE_DOMAIN=.yourdomain.com
-Environment=COOKIE_SECURE=1
-# Before DNS is wired up, a bare host/IP maps to the default family:
-Environment=DEFAULT_HOSTS=<your-ip>
-ExecStart=/usr/bin/node server.js
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-```
+Box-specific settings stay **out of `.appd.conf`** (it is committed and shared):
+put them in `/opt/syncart/.env`, which `scripts/load-env.mjs` loads at startup
+and `npm run deploy` never overwrites. At minimum:
 
 ```bash
-sudo systemctl enable --now syncart
+DATA_DIR=/var/lib/syncart/families
+PLATFORM_DB=/var/lib/syncart/platform.db
+COOKIE_DOMAIN=.yourdomain.com
+COOKIE_SECURE=0          # 1 once TLS is on
+DEFAULT_HOSTS=<your-ip>  # before DNS is wired up, map the bare IP to `home`
 ```
+
+Two parts of `.appd.conf` are easy to get wrong:
+
+- **`permissions.write` must cover the data dir.** appd applies
+  `ProtectSystem=strict`, so only `permissions.write` paths (plus the state
+  directory) are writable. `DATA_DIR`/`PLATFORM_DB` live in `/var/lib/syncart`,
+  hence `"write": ["/var/lib/syncart"]`. If it's missing, the app opens SQLite
+  read-only (visible as `lrwx------` in `ls -l /proc/<pid>/fd`) or logs `EROFS`.
+- **`permissions.executable_memory: true`** — Node/V8 needs a JIT; without it
+  the process dies immediately with `SIGTRAP`.
 
 ## 4. Firewall
 
@@ -121,8 +131,10 @@ retaining the newest `KEEP_BACKUPS`. Manually: `npm run backup`.
 
 ## 7. Day-to-day
 
-- **Deploy an update:** from the repo, `npm run deploy -- --push` (commit-then-push with `-m "msg"`, or just `npm run deploy` to sync the working tree). The box can't `git pull` from the laptop-only `jldgithub` alias, so the script rsyncs the repo over, builds, and restarts `syncart.service`. **The box's `/opt/syncart/.env` is excluded from rsync (and from `--delete`), so server config is never overwritten by a deploy.**
-- **Configure the app:** set env vars as `Environment=` lines in the systemd unit (root), *or* drop a `.env` file in `/opt/syncart` (no root) — real env vars win over `.env`, and `.env` wins over built-in defaults. Copy `.env.example` to start. The deploy script prints a reminder if the box has no `.env`.
+- **Deploy an update:** from the repo, `npm run deploy -- --push` (commit-then-push with `-m "msg"`, or just `npm run deploy` to sync the working tree). The box can't `git pull` from the laptop-only `jldgithub` alias, so the script rsyncs the repo over, builds, installs `.appd.conf` to `/etc/appd/syncart.json` **only if it changed**, runs `appd apply`, and restarts `appd-syncart.service`. **The box's `/opt/syncart/.env` is excluded from rsync (and from `--delete`), so server config is never overwritten by a deploy.**
+- **Change the service config:** edit `.appd.conf`, commit, and deploy. Don't hand-edit `/etc/appd/syncart.json` — the next deploy with a changed `.appd.conf` replaces it. The generated unit (`/etc/systemd/system/appd-syncart.service`) is never edited directly either.
+- **Configure the app:** put box-specific values in `/opt/syncart/.env` (no root; preserved by deploys) — real env vars win over `.env`, and `.env` wins over built-in defaults. Copy `.env.example` to start. Values shared by every deployment (non-secret) can go in the `.appd.conf` `"environment"` object instead.
+- **Inspect the service:** `sudo appd status all`, `sudo appd diff syncart` (in sync?), `sudo appd doctor`, `sudo appd logs syncart`, `sudo appd error-logs syncart`, `sudo appd restart syncart`.
 - **Provision a family:** `node scripts/create-family.mjs create james "The James Family"`
 - **Known test login:** `node scripts/setup.mjs` (creates/resets `dev@example.com` / `devpassword` on the default family).
 
@@ -141,13 +153,13 @@ retaining the newest `KEEP_BACKUPS`. Manually: `npm run backup`.
 |---|---|
 | Host | Linode `g6-nanode-1gb`, Ubuntu LTS, hostname `syncart` |
 | Access | `ssh syncart` (laptop `~/.ssh/config` → user `deploy`) |
-| App | `/opt/syncart`, built, `systemd` unit `syncart.service`, binds `127.0.0.1:8787` |
+| App | `/opt/syncart`, built, appd unit `appd-syncart.service` (appd 0.2.4), binds `127.0.0.1:8787` |
 | Proxy | Caddy, reverse-proxies `:80` → `127.0.0.1:8787` |
 | Data dir | `/var/lib/syncart/` (`families/` + `platform.db`), set via `/opt/syncart/.env` — outside the deployed tree |
-| Config | `/opt/syncart/.env` (preserved by deploys) + systemd `Environment=` lines |
+| Config | `/opt/syncart/.env` (box-specific, preserved by deploys) + `/etc/appd/syncart.json` (installed from the repo's `.appd.conf`, `0600`) |
 
 > The box's real identity — IP, domain, credentials — is intentionally **not
-> in this repo**; it lives only in the box's own config (`.env` / systemd /
+> in this repo**; it lives only in the box's own config (`.env` / appd config /
 > Caddy). In production the app refuses to start unless it's told its
 > environment (`COOKIE_DOMAIN`, `COOKIE_SECURE`, `DATA_DIR`, `PLATFORM_DB`).
 
